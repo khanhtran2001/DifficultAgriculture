@@ -14,3 +14,6 @@ datasets/
 
 # Result files
 results/
+
+# Model checkpoints
+finetuned_baseline_model/
