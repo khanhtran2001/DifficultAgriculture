@@ -1,8 +1,8 @@
-from dagri.interfaces import BaselineConfig, DatasetProperties
+from dagri.interfaces import BaselineConfig, DatasetProperties, EvaluationResults, BaselineInterface, PredictionResult
 from dagri.baseline.yolo_model import YoloUltralyticsModel
 
 
-class Baseline:
+class Baseline(BaselineInterface):
     """
     Baseline model wrapper that routes to concrete implementations.
     Accepts typed config and dataset properties.
@@ -30,15 +30,35 @@ class Baseline:
         """
         return self.model.custom_train(dataset_properties, output_dir)
     
-    def custom_evaluate(self, best_weight_path: str, dataset_properties: DatasetProperties, output_dir: str) -> dict:
-        """Backward-compatible alias for test-set evaluation."""
-        return self.model.custom_evaluate(best_weight_path, dataset_properties, output_dir)
+    def custom_evaluate_on_test_set(self, best_weight_path: str, dataset_properties: DatasetProperties) -> EvaluationResults:
+        """Evaluate baseline model on test set and return typed evaluation results."""
+        return self.model.custom_evaluate_on_test_set(best_weight_path, dataset_properties)
+
     
-    def custom_predict(self, model_weight: str, image_path: str, output_dir: str, conf: float, iou: float, max_det: int) -> None:
+    def custom_predict(self, model_weight: str, image_dir: str, conf: float, iou: float, max_det: int) -> list[PredictionResult]:
         """
-        Run inference on a single image.
+        Run inference on a directory of images and return prediction results.
         """
-        return self.model.custom_predict(model_weight, image_path, output_dir, conf, iou, max_det)
+        return self.model.custom_predict(model_weight, image_dir, conf, iou, max_det)
+
+    def get_optimal_conf_threshold_for_scoring(
+        self,
+        dataset_properties: DatasetProperties,
+        model_weight: str,
+        conf_min: float = 0.001,
+        conf_max: float = 0.9,
+        num_points: int = 20,
+    ) -> float:
+        """
+        Run a grid search on validation set to find the best confidence threshold.
+        """
+        return self.model.get_optimal_conf_threshold_for_scoring(
+            dataset_properties=dataset_properties,
+            model_weight=model_weight,
+            conf_min=conf_min,
+            conf_max=conf_max,
+            num_points=num_points,
+        )
 
 
 

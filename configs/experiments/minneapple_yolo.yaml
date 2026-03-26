@@ -26,7 +26,7 @@ baseline_config:
   
   # Training parameters
   training_config:
-    epochs: 10 
+    epochs: 10
     batch_size: 16
     input_size: 1024
     learning_rate: 0.01
@@ -54,7 +54,17 @@ baseline_config:
   evaluation_config:
     image_size: 1024
     confidence_threshold: 0.001
-    iou_threshold: 0.7
-    max_detections: 300
+    iou_threshold: 0.5
+    max_detections: 10000
     metrics: ["mAP", "AP_50", "AP_75", "AP_small", "AP_medium", "AP_large"]
+
+
+# Scoring configuration
+scoring_config:
+  type: "min_scorer"
+  alpha: 0.5
+  beta: 0.5
+  iou_threshold: 0.5
+  object_weight: 0.7
+  false_positive_weight: 0.3
 

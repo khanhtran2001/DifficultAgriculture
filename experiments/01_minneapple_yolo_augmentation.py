@@ -1,7 +1,6 @@
 import argparse
 from pathlib import Path
 import sys
-import os
 
 # Allow running this file directly: `python experiments/01_minneapple_yolo_augmentation.py`
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -12,6 +11,7 @@ from dagri.general.config_manager import ConfigManager
 from dagri.general.result_manager import ResultManager
 from dagri.data import CustomDataset
 from dagri.baseline import Baseline
+from dagri.scoring.scorer import Scorer
 
 import experiments.utils as exputils
 """
@@ -50,7 +50,6 @@ CONFIG_DIR = Path("/home/khanh/Projects/DifficultyAgri/configs/experiments/minne
 
 def run_experiment(config_path: str):
 
-    
     # Initialize ouptut directory
     step_1_dir, step_2_dir, step_3_dir, step_4_dir, step_5_dir, logs_dir = exputils.initialize_output_directory(RESULTS_DIR) 
     # Frozen the configuration file for reproducibility
@@ -62,6 +61,8 @@ def run_experiment(config_path: str):
     config_manager.load_all_configs(config_path)
     initial_dataset_config = config_manager.initial_dataset_config
     baseline_model_config = config_manager.baseline_config
+    scoring_config = config_manager.scoring_config
+    augmentation_config = config_manager.augmentation_config  
 
     # Initialize result manager
     result_manager = ResultManager()
@@ -79,17 +80,38 @@ def run_experiment(config_path: str):
     baseline_model = Baseline(baseline_model_config)
     best_weight_path = baseline_model.custom_train(initial_dataset_properties, train_result_dir)
 
-    """
-    Score the dataset using the trained baseline model and save results
-    """
+    # Evaluate on test set and save returned typed results
+    evaluation_results = baseline_model.custom_evaluate_on_test_set(best_weight_path, initial_dataset_properties)
+    result_manager.save_evaluation_results_to_json(step_2_dir, evaluation_results)
+
+    # Score the dataset using the trained baseline model and save results
+    
     # First we need to get the predictions of the baseline model on the train set to use as reference for scoring
     low_conf_thershold = 0.0001
     iou_threshold = 0.5 # Non-maximum suppression IoU threshold
     max_det = 10000 # Maximum number of detections per image
     image_dir = "datasets/minneapple/yolo_format/minneapple_yolo/train/images"
-    low_conf_result_dir = f"{step_3_dir}/low_conf_predictions"
-    baseline_model.custom_predict(model_weight=best_weight_path, image_path=image_dir, output_dir=low_conf_result_dir, conf=low_conf_thershold, iou=iou_threshold, max_det=max_det)
+    low_conf_prediction_dir = f"{step_2_dir}/low_conf_predictions"
+    low_conf_predictions = baseline_model.custom_predict(model_weight=best_weight_path, image_dir=image_dir, conf=low_conf_thershold, iou=iou_threshold, max_det=max_det)
+    result_manager.save_prediction_results(low_conf_prediction_dir, low_conf_predictions)
+
+    # Next we need to find the optimal confidence threshold that gives us the best score for the dataset
+    optimal_conf_threshold_prediction_dir = f"{step_2_dir}/optimal_conf_predictions"
+    optimal_conf_threshold = baseline_model.get_optimal_conf_threshold_for_scoring(dataset_properties=initial_dataset_properties, model_weight=best_weight_path) # Find the optimal confidence threshold that balances precision and recall for the dataset, this will be use the validation set to find the optimal confidence threshold.
+    optimal_conf_predictions = baseline_model.custom_predict(model_weight=best_weight_path, image_dir=image_dir, conf=optimal_conf_threshold, iou=iou_threshold, max_det=max_det)
+    result_manager.save_prediction_results(optimal_conf_threshold_prediction_dir, optimal_conf_predictions)
+    print(f"Optimal confidence threshold: {optimal_conf_threshold}")
+
     # Then we can score the dataset using the predictions and save the results
+    """
+    This score will do the following:
+    1. Compare the predictions with the ground truth labels to calculate true positives, false positives.
+    """
+    scoring = Scorer(scoring_config)
+
+    score_results = scoring.score(optimal_conf_threshold_prediction_dir, low_conf_prediction_dir, initial_dataset_properties)
+    result_manager.save_score_results_to_json(step_3_dir, score_results)
+    print(f"Result for Scoring step has been save to: {step_3_dir}")
 
 
     

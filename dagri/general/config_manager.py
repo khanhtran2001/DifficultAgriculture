@@ -3,20 +3,26 @@ from pathlib import Path
 import json
 import yaml
 
-from dagri.interfaces import DatasetConfig, BaselineConfig
+from dagri.interfaces import DatasetConfig, BaselineConfig, ScoringConfig
 
 class ConfigManager:
     def __init__(self):
         self.initial_dataset_config = None
         self.baseline_config = None
+        self.scoring_config = None
+        self.augmentation_config = None
     
     def load_all_configs(self, yaml_config_file_path: str) -> None:
         with open(yaml_config_file_path, "r") as f:
             all_configs = yaml.safe_load(f)
         dataset_config = all_configs.get("dataset_config") or all_configs.get("dataset") or {}
         baseline_config = all_configs.get("baseline_config") or all_configs.get("baseline_model") or {}
+        scoring_config = all_configs.get("scoring_config") or {}
+        augmentation_config = all_configs.get("augmentation_config") or {}
         self.initial_dataset_config = DatasetConfig.from_dict(dataset_config)
         self.baseline_config = BaselineConfig.from_dict(baseline_config)
+        self.scoring_config = ScoringConfig.from_dict(scoring_config)
+        self.augmentation_config = augmentation_config
         
 
     

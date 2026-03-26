@@ -3,10 +3,9 @@ This file defines the interfaces for the DifficultyAgri project.
 """
 
 from __future__ import annotations
+from abc import abstractmethod
 from dataclasses import dataclass, field, fields
-from typing import Any, Dict, List, Optional, Tuple, Union
-import numpy as np
-from sklearn.naive_bayes import abstractmethod
+from typing import Any, Dict, List, Optional
 
 
 def _dataclass_kwargs(cls, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -122,6 +121,33 @@ class BaselineConfig:
         values["evaluation_config"] = EvaluationConfig.from_dict(evaluation_cfg)
         return cls(**values)
 
+@dataclass
+class EvaluationResults:
+    COCO_AP: float
+    COCO_AP50: float
+    COCO_AP75: float
+    AP_small: float
+    AP_medium: float
+    AP_large: float
+
+@dataclass
+class PredictionResult:
+    image_path: str
+    classes: List[int]  # List of predicted class indices
+    confidences: List[float]  # List of confidence scores for each prediction
+    predicted_boxes: List[BoundingBox]  # Bounding box coordinates for each prediction
+
+@dataclass
+class BoundingBox:
+    x_center: Optional[float] = None  # x_center coordinates (normalized 0-1)
+    y_center: Optional[float] = None  # y_center coordinates (normalized 0-1)
+    width: Optional[float] = None  # widths (normalized 0-1)
+    height: Optional[float] = None  # heights (normalized 0-1)
+    x_min: Optional[float] = None  # x_min coordinates (normalized 0-1)
+    y_min: Optional[float] = None  # y_min coordinates (normalized 0-1)
+    x_max: Optional[float] = None  #  x_max coordinates (normalized 0-1)
+    y_max: Optional[float] = None  # y_max coordinates (normalized 0-1)
+
 
 """
 Scoring configuration data class for representing the scoring configuration used to score the model's performance.
@@ -130,13 +156,47 @@ This data class provides a structured way to represent the scoring configuration
 
 @dataclass
 class ScoringConfig:
+    type: str
     alpha: float 
     beta: float
     iou_threshold: float
     object_weight: float
     false_positive_weight: float
-    false_positive_confidence_threshold: float
 
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ScoringConfig":
+        data = dict(data or {})
+        values = _dataclass_kwargs(cls, data)
+
+        required = [f.name for f in fields(cls)]
+        missing = [name for name in required if name not in values]
+        if missing:
+            raise ValueError(
+                "Missing required scoring config field(s): " + ", ".join(missing)
+            )
+        return cls(**values)
+
+
+@dataclass
+class ScoringResults:
+    image_difficulties: List[ImageDifficultyProperties]
+
+@dataclass 
+class ImageDifficultyProperties:
+    image_path: str
+    difficulty_score: float
+    num_objects: int
+    objects_score: List[ObjectDifficultyProperties]
+    false_positive_rate: float
+    missed_detections_rate: float
+
+@dataclass
+class ObjectDifficultyProperties:
+    image_path: str
+    object_id: int
+    class_id: int
+    bounding_box: BoundingBox
+    difficulty_score: float
 
 
 
@@ -170,21 +230,21 @@ class DatasetInterface:
 
 class BaselineInterface:
     @abstractmethod
-    def train(self, training_config: dict) -> None:
+    def custom_train(self, training_config: dict) -> None:
         """
         Train the model based on the provided training configuration.
         """
         pass
 
     @abstractmethod
-    def predict(self, image_path: str) -> List[Dict[str, Any]]:
+    def custom_predict(self, image_path: str) -> List[Dict[str, Any]]:
         """
         Predict the objects in the given image and return the results.
         """
         pass
     
     @abstractmethod
-    def evaluate(self, evaluation_config: dict) -> dict:
+    def custom_evaluate_on_test_set(self, evaluation_config: dict) -> dict:
         """
         Evaluate the model based on the provided evaluation configuration.
         """
