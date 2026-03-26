@@ -7,7 +7,7 @@ class Baseline:
     Baseline model wrapper that routes to concrete implementations.
     Accepts typed config and dataset properties.
     """
-    def __init__(self, baseline_config: BaselineConfig | dict, dataset_properties: DatasetProperties | None = None) -> None:
+    def __init__(self, baseline_config: BaselineConfig | dict) -> None:
         """
         Initialize the baseline model from typed config and dataset properties.
         
@@ -20,31 +20,25 @@ class Baseline:
         
         model_type = baseline_config.model_type
         if model_type == "yolo":
-            self.model = YoloUltralyticsModel(baseline_config, dataset_properties)
+            self.model = YoloUltralyticsModel(baseline_config)
         else:
             raise ValueError(f"Unsupported baseline model type: {model_type}")
     
-    def custom_train(self, output_dir: str) -> str:
+    def custom_train(self, dataset_properties: DatasetProperties, output_dir: str) -> str:
         """
         Train the baseline model and return path to best weights.
         """
-        return self.model.custom_train(output_dir)
+        return self.model.custom_train(dataset_properties, output_dir)
     
-    def custom_evaluate_on_test_set(self, best_weight_path: str, output_dir: str = "runs/evaluation") -> dict:
-        """
-        Evaluate the baseline model on the test set with COCO metrics.
-        """
-        return self.model.custom_evaluate_on_test_set(best_weight_path, output_dir)
-
-    def custom_evaluate(self, best_weight_path: str, output_dir: str = "runs/evaluation") -> dict:
+    def custom_evaluate(self, best_weight_path: str, dataset_properties: DatasetProperties, output_dir: str) -> dict:
         """Backward-compatible alias for test-set evaluation."""
-        return self.custom_evaluate_on_test_set(best_weight_path, output_dir)
+        return self.model.custom_evaluate(best_weight_path, dataset_properties, output_dir)
     
-    def custom_predict(self, image_path: str):
+    def custom_predict(self, model_weight: str, image_path: str, output_dir: str, conf: float, iou: float, max_det: int) -> None:
         """
         Run inference on a single image.
         """
-        return self.model.custom_predict(image_path)
+        return self.model.custom_predict(model_weight, image_path, output_dir, conf, iou, max_det)
 
 
 

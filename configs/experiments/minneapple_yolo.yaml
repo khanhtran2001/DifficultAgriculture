@@ -7,28 +7,31 @@ general:
 
 
 # Dataset configuration
-dataset:
+dataset_config:
   name: minneapple
   type: "yolo_detection"
   root_dir: /home/khanh/Projects/DifficultyAgri/datasets/minneapple/yolo_format/minneapple_yolo 
   train_mask_dir: /home/khanh/Projects/DifficultyAgri/datasets/minneapple/raw/MinneAppleDetection/test_data/detection/images
-  num_class: 1
+  num_classes: 1
   class_names: ["apple"]
 
 
 # Model configuration
-baseline_model:
+baseline_config:
 
   # Model overview and structure
   name: yolov8s
   model_type: "yolo"
-  pretrained_weights_path: /home/khanh/Projects/DifficultyAgri/finetuned_baseline_model/yolov8s.pt
+  pretrained_weights_path: "/home/khanh/Projects/DifficultyAgri/finetuned_baseline_model/yolov8s.pt" 
   
   # Training parameters
-  training_parameters:
+  training_config:
     epochs: 10 
     batch_size: 16
     input_size: 1024
+    learning_rate: 0.01
+    early_stopping_patience: 10 
+    seed: 123
 
   # Augmentation parameters
     augmentation:
@@ -48,13 +51,10 @@ baseline_model:
       flipud: 0.0       # Image flip up-down (probability). Set to 0.5 ONLY for top-down datasets like Wheat. Keep 0.0 for MinneApple.
 
   # Evaluation metrics
-  evaluation_parameters:
+  evaluation_config:
     image_size: 1024
     confidence_threshold: 0.001
     iou_threshold: 0.7
+    max_detections: 300
     metrics: ["mAP", "AP_50", "AP_75", "AP_small", "AP_medium", "AP_large"]
 
-
-# Scoring parameters
-Scoring:
-  

@@ -16,21 +16,23 @@ def _dataclass_kwargs(cls, data: Dict[str, Any]) -> Dict[str, Any]:
 
 # Data Interface
 
+"""
+Data classes for configuration and properties of datasets, baselines, training, evaluation, and scoring.
+These data classes provide a structured way to represent the various configurations and properties used throughout the project.
+"""
 @dataclass
 class DatasetConfig:
-    name: str = ""
-    type: str = ""
-    root_dir: str = ""
+    name: str
+    type: str
+    root_dir: str
+    num_classes: int
+    class_names: List[str]
     train_mask_dir: Optional[str] = None
-    num_classes: int = 0
-    class_names: List[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "DatasetConfig":
-        # Handle backward compatibility: map 'num_class' to 'num_classes'
-        if data and "num_class" in data and "num_classes" not in data:
-            data = {**data, "num_classes": data["num_class"]}
-        return cls(**_dataclass_kwargs(cls, data or {}))
+        data = dict(data or {})
+        return cls(**_dataclass_kwargs(cls, data))
 
 @dataclass
 class DatasetProperties:
@@ -45,6 +47,11 @@ class DatasetProperties:
     test_images_dir: Optional[str] = None
     test_labels_dir: Optional[str] = None
 
+"""
+Baseline properties and configuration data classes for representing the baseline model's configuration, training parameters, and evaluation parameters.
+These data classes provide a structured way to represent the baseline model's configuration and properties used throughout the project.
+"""
+
 @dataclass
 class BaselineProperties:
     name: str
@@ -54,62 +61,81 @@ class BaselineProperties:
     best_checkpoint_path: Optional[str]
     prediction_directory: Optional[str]
 
+
 @dataclass
 class TrainingConfig:
-    input_size: int = 640
-    epochs: int = 100
-    batch_size: int = 16
-    learning_rate: float = 0.01
-    seed: int = 42
-    early_stopping_patience: int = 20
-    traditional_augmentation_config: dict = field(default_factory=dict)
+    epochs: int
+    batch_size: int
+    input_size: int
+    epochs: int 
+    batch_size: int 
+    learning_rate: float 
+    seed: int 
+    early_stopping_patience: int
+    traditional_augmentation_config: dict 
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "TrainingConfig":
         data = data or {}
-        # Handle augmentation -> traditional_augmentation_config mapping
-        if "augmentation" in data and "traditional_augmentation_config" not in data:
-            data = {**data, "traditional_augmentation_config": data["augmentation"]}
-        return cls(**_dataclass_kwargs(cls, data))
+        # Extract augmentation if present and nested
+        aug_config = data.get("augmentation", {})
+        # Get allowed fields from dataclass
+        values = _dataclass_kwargs(cls, data)
+        # Set augmentation config from nested augmentation key
+        if aug_config:
+            values["traditional_augmentation_config"] = aug_config
+        return cls(**values)
 
 @dataclass
 class EvaluationConfig:
-    save_dir: str = "runs/evaluation"
-    image_size: Optional[int] = None
-    confidence_threshold: Optional[float] = None
-    iou_threshold: Optional[float] = None
-    max_detections: Optional[int] = None
+    image_size: int
+    confidence_threshold: float
+    iou_threshold: float
+    max_detections: int
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "EvaluationConfig":
-        return cls(**_dataclass_kwargs(cls, data or {}))
+        data = data or {}
+        values = _dataclass_kwargs(cls, data)
+        return cls(**values)
 
 @dataclass
 class BaselineConfig:
-    name: str = ""
-    model_type: str = ""
-    finetune_model_path: Optional[str] = None
-    training_config: TrainingConfig = field(default_factory=TrainingConfig)
-    evaluation_config: EvaluationConfig = field(default_factory=EvaluationConfig)
+    name: str
+    model_type: str
+    pretrained_weights_path: str
+    training_config: TrainingConfig
+    evaluation_config: EvaluationConfig
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "BaselineConfig":
         data = data or {}
-        
-        # Handle field name mappings for backward compatibility
-        if "pretrained_weights_path" in data and "finetune_model_path" not in data:
-            data = {**data, "finetune_model_path": data["pretrained_weights_path"]}
-        
         values = _dataclass_kwargs(cls, data)
-        # Handle training_parameters -> training_config mapping
-        training_data = data.get("training_config") or data.get("training_parameters") or {}
-        values["training_config"] = TrainingConfig.from_dict(training_data)
-        
-        # Handle evaluation_parameters -> evaluation_config mapping
-        evaluation_data = data.get("evaluation_config") or data.get("evaluation_parameters") or {}
-        values["evaluation_config"] = EvaluationConfig.from_dict(evaluation_data)
-        
+        # Look for training_config or training_parameters (YAML uses training_parameters)
+        training_cfg = data.get("training_config") or data.get("training_parameters")
+        evaluation_cfg = data.get("evaluation_config") or data.get("evaluation_parameters")
+        if training_cfg is None:
+            raise ValueError("Missing required 'training_config' or 'training_parameters' in baseline config")
+        if evaluation_cfg is None:
+            raise ValueError("Missing required 'evaluation_config' or 'evaluation_parameters' in baseline config")
+        values["training_config"] = TrainingConfig.from_dict(training_cfg)
+        values["evaluation_config"] = EvaluationConfig.from_dict(evaluation_cfg)
         return cls(**values)
+
+
+"""
+Scoring configuration data class for representing the scoring configuration used to score the model's performance.
+This data class provides a structured way to represent the scoring configuration used throughout the project.
+"""
+
+@dataclass
+class ScoringConfig:
+    alpha: float 
+    beta: float
+    iou_threshold: float
+    object_weight: float
+    false_positive_weight: float
+    false_positive_confidence_threshold: float
 
 
 
