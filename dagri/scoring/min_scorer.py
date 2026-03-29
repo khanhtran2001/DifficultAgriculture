@@ -62,6 +62,8 @@ class MinScorer(ScorerInterface):
                 gt_cls, gt_xywh, _ = gt
                 gt_xyxy = self._xywh_to_xyxy(gt_xywh)
 
+                # Default to maximum difficulty when no matched prediction exists.
+                # Since conf and IoU are each in [0, 1], max cost is alpha + beta.
                 best_cost = alpha + beta
                 for pred_cls, pred_xywh, pred_conf in low_preds:
                     if int(pred_cls) != int(gt_cls):

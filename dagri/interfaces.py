@@ -186,9 +186,9 @@ class ImageDifficultyProperties:
     image_path: str
     difficulty_score: float
     num_objects: int
-    objects_score: List[ObjectDifficultyProperties]
     false_positive_rate: float
     missed_detections_rate: float
+    objects_score: List[ObjectDifficultyProperties]
 
 @dataclass
 class ObjectDifficultyProperties:

@@ -79,5 +79,6 @@ class MinneappleYoloDetectionDataset():
         Get the properties of the dataset, such as the number of images, class distribution, etc.
         """
         return self.dataset_properties
+
     
     

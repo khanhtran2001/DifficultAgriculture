@@ -150,7 +150,7 @@ class YoloUltralyticsModel:
 
             if not os.path.exists(pred_json_path):
                 raise FileNotFoundError(
-                    "Predictions JSON not created. Checked: " + ", ".join(candidate_dirs)
+                    "Predictions JSON not  0.04created. Checked: " + ", ".join(candidate_dirs)
                 )
 
             coco_gt = COCO(coco_gt_json)

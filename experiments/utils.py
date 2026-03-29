@@ -14,7 +14,9 @@ def initialize_output_directory(parent_output_dir: Path, overwrite: bool = True)
             parent_output_dir.mkdir(parents=True, exist_ok=True)
             print(f"Output directory {parent_output_dir} existed and was overwritten.")
         else:
-            print(f"Output directory {parent_output_dir} already exists. Reusing it.")
+            raise FileExistsError(
+                f"Output directory already exists and overwrite=False: {parent_output_dir.resolve()}"
+            )
     else:
         parent_output_dir.mkdir(parents=True, exist_ok=True)
         print(f"New output directory {parent_output_dir} has been created.")

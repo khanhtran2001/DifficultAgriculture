@@ -9,7 +9,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from dagri.general.config_manager import ConfigManager
 from dagri.general.result_manager import ResultManager
-from dagri.data import CustomDataset
+from dagri.data import CustomDataset, compute_max_det_from_train_labels
 from dagri.baseline import Baseline
 from dagri.scoring.scorer import Scorer
 
@@ -73,7 +73,7 @@ def run_experiment(config_path: str):
     initial_dataset.validate()
     # Save the dataset properties to the output directory
     initial_dataset_properties = initial_dataset.get_properties()
-    result_manager.save_dataset_properties_to_json(initial_dataset_properties, step_1_dir)
+    result_manager.save_dataset_properties_to_json(step_1_dir, initial_dataset_properties)
 
     # Train baseline model using dataset properties
     train_result_dir = step_2_dir / "train_results"
@@ -89,7 +89,12 @@ def run_experiment(config_path: str):
     # First we need to get the predictions of the baseline model on the train set to use as reference for scoring
     low_conf_thershold = 0.0001
     iou_threshold = 0.5 # Non-maximum suppression IoU threshold
-    max_det = 10000 # Maximum number of detections per image
+    max_det = compute_max_det_from_train_labels(
+        train_labels_dir=initial_dataset_properties.train_labels_dir,
+        percentile=0.99,
+        multiplier=3,
+    )
+    print(f"Auto max_det from p99 object count x3: {max_det}")
     image_dir = "datasets/minneapple/yolo_format/minneapple_yolo/train/images"
     low_conf_prediction_dir = f"{step_2_dir}/low_conf_predictions"
     low_conf_predictions = baseline_model.custom_predict(model_weight=best_weight_path, image_dir=image_dir, conf=low_conf_thershold, iou=iou_threshold, max_det=max_det)
@@ -111,7 +116,7 @@ def run_experiment(config_path: str):
 
     score_results = scoring.score(optimal_conf_threshold_prediction_dir, low_conf_prediction_dir, initial_dataset_properties)
     result_manager.save_score_results_to_json(step_3_dir, score_results)
-    print(f"Result for Scoring step has been save to: {step_3_dir}")
+    
 
 
     
