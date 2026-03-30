@@ -12,6 +12,7 @@ from dagri.general.result_manager import ResultManager
 from dagri.data import CustomDataset, compute_max_det_from_train_labels
 from dagri.baseline import Baseline
 from dagri.scoring.scorer import Scorer
+from dagri.augmentation import CopyPasteAugmentor
 
 import experiments.utils as exputils
 """
@@ -79,8 +80,7 @@ def run_experiment(config_path: str):
     # Train baseline model using dataset properties
     train_result_dir = step_2_dir / "train_results"
     baseline_model = Baseline(baseline_model_config)
-    best_weight_path = baseline_model.custom_train(initial_dataset_properties, train_result_dir)
-
+    best_weight_path = f"/home/khanh/Projects/DifficultyAgri/results/02_minneapple_yolo_scoring_exp/Step_2_Train_and_Evaluate_BASELINE_MODEL/train_results/best.pt" 
     # Evaluate on test set and save returned typed results
     evaluation_results = baseline_model.custom_evaluate_on_test_set(best_weight_path, initial_dataset_properties)
     result_manager.save_evaluation_results_to_json(step_2_dir, evaluation_results)
@@ -122,12 +122,26 @@ def run_experiment(config_path: str):
         labels_dir=initial_dataset_properties.train_labels_dir,
     )
     result_manager.save_score_results_to_json(step_3_dir, score_results)
-    
 
+    # Start copy-paste augmentation using the scoring results and save the augmented dataset
+    augmentation_config = config_manager.augmentation_config
+    augmentor = CopyPasteAugmentor(augmentation_config)
+    augmented_dataset_dir = step_4_dir / "augmented_dataset"
+    new_dataset_properties = augmentor.create_new_dataset(
+        initial_dataset_properties=initial_dataset_properties,
+        scoring_results=score_results,
+        new_dataset_path=augmented_dataset_dir,
+    )
+    result_manager.save_dataset_properties_to_json(step_4_dir, new_dataset_properties)
 
-    
-
-
+    # Train a new model on the augmented dataset and evaluate on the original test set to see if there is any improvement
+    new_train_result_dir = step_5_dir / "train_results"
+    baseline_model = Baseline(baseline_model_config)
+    best_weight_path_new_dataset = baseline_model.custom_train(new_dataset_properties, new_train_result_dir)
+    evaluation_results_initial_dataset = baseline_model.custom_evaluate_on_test_set(best_weight_path, initial_dataset_properties)
+    result_manager.save_evaluation_results_to_json(step_5_dir, evaluation_results_initial_dataset, file_name="evaluation_report_initial_dataset.json")
+    evaluation_results_new_dataset = baseline_model.custom_evaluate_on_test_set(best_weight_path_new_dataset, new_dataset_properties)
+    result_manager.save_evaluation_results_to_json(step_5_dir, evaluation_results_new_dataset, file_name="evaluation_report_new_dataset.json")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the MinneApple YOLO augmentation experiment")

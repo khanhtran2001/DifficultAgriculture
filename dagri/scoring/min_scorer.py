@@ -14,21 +14,28 @@ class MinScorer(ScorerInterface):
     def __init__(self, scoring_config: ScoringConfig):
         self.scoring_config = scoring_config
 
-    def score(self, optimal_conf_threshold_prediction_dir: str, low_conf_prediction_dir: str, dataset_properties) -> ScoringResults:
+    def score(
+        self,
+        optimal_conf_threshold_prediction_dir: str,
+        low_conf_prediction_dir: str,
+        images_dir: str,
+        labels_dir: str,
+    ) -> ScoringResults:
         """
         Score every image using object-level miss cost and image-level false-positive penalty.
 
         S_obj = min_pred(alpha*(1-conf) + beta*(1-IoU)) over predictions with IoU >= iou_threshold.
         S_img = w1*avg(S_obj) + w2*FP_rate.
         """
-        train_labels_dir = getattr(dataset_properties, "train_labels_dir", None)
-        train_images_dir = getattr(dataset_properties, "train_images_dir", None)
-        if not train_labels_dir:
-            raise ValueError("dataset_properties.train_labels_dir is required for scoring")
+        if not labels_dir:
+            raise ValueError("labels_dir is required for scoring")
+        if not images_dir:
+            raise ValueError("images_dir is required for scoring")
 
         low_dir = Path(low_conf_prediction_dir)
         opt_dir = Path(optimal_conf_threshold_prediction_dir)
-        label_dir = Path(train_labels_dir)
+        label_dir = Path(labels_dir)
+        image_dir = Path(images_dir)
 
         if not label_dir.exists():
             raise FileNotFoundError(f"Ground-truth label directory not found: {label_dir}")
@@ -36,15 +43,23 @@ class MinScorer(ScorerInterface):
             raise FileNotFoundError(f"Low-confidence prediction directory not found: {low_dir}")
         if not opt_dir.exists():
             raise FileNotFoundError(f"Optimal-threshold prediction directory not found: {opt_dir}")
+        if not image_dir.exists():
+            raise FileNotFoundError(f"Image directory not found: {image_dir}")
 
         alpha = float(self.scoring_config.alpha)
         beta = float(self.scoring_config.beta)
         iou_thr = float(self.scoring_config.iou_threshold)
         w1 = float(self.scoring_config.object_weight)
         # Kept for backward compatibility with existing config key naming.
-        w2 = float(self.scoring_config.false_positive_weight)
+        configured_w2 = float(self.scoring_config.false_positive_weight)
+        weight_mode = str(getattr(self.scoring_config, "weight_mode", "fixed")).strip().lower()
+        if weight_mode not in {"fixed", "mean_match", "balance_correlation"}:
+            raise ValueError(
+                f"Unknown scoring weight_mode={weight_mode}. "
+                "Use 'fixed', 'mean_match', or 'balance_correlation'."
+            )
 
-        image_difficulties: List[ImageDifficultyProperties] = []
+        per_image_rows: List[Dict] = []
 
         for gt_file in sorted(label_dir.glob("*.txt")):
             stem = gt_file.stem
@@ -84,7 +99,7 @@ class MinScorer(ScorerInterface):
                 )
                 object_details.append(
                     ObjectDifficultyProperties(
-                        image_path=self._resolve_image_path(stem, train_images_dir),
+                        image_path=self._resolve_image_path(stem, images_dir),
                         object_id=obj_id,
                         class_id=int(gt_cls),
                         bounding_box=bbox,
@@ -103,21 +118,112 @@ class MinScorer(ScorerInterface):
                 preds=opt_preds,
                 iou_threshold=iou_thr,
             )
-            s_img = float(w1 * avg_obj + w2 * fp_rate)
+            image_path = self._resolve_image_path(stem, images_dir)
+            per_image_rows.append(
+                {
+                    "image_path": image_path,
+                    "num_objects": len(gt_boxes),
+                    "objects_score": object_details,
+                    "avg_object_score": avg_obj,
+                    "false_positive_rate": fp_rate,
+                    "missed_detections_rate": missed_rate,
+                }
+            )
 
-            image_path = self._resolve_image_path(stem, train_images_dir)
+        auto_w2 = self._select_false_positive_weight(
+            image_rows=per_image_rows,
+            object_weight=w1,
+            fixed_false_positive_weight=configured_w2,
+            weight_mode=weight_mode,
+        )
+
+        image_difficulties: List[ImageDifficultyProperties] = []
+        for row in per_image_rows:
+            s_img = float(
+                w1 * float(row["avg_object_score"])
+                + auto_w2 * float(row["false_positive_rate"])
+            )
             image_difficulties.append(
                 ImageDifficultyProperties(
-                    image_path=image_path,
+                    image_path=str(row["image_path"]),
                     difficulty_score=s_img,
-                    num_objects=len(gt_boxes),
-                    objects_score=object_details,
-                    false_positive_rate=fp_rate,
-                    missed_detections_rate=missed_rate,
+                    num_objects=int(row["num_objects"]),
+                    objects_score=row["objects_score"],
+                    false_positive_rate=float(row["false_positive_rate"]),
+                    missed_detections_rate=float(row["missed_detections_rate"]),
                 )
             )
 
-        return ScoringResults(image_difficulties=image_difficulties)
+        return ScoringResults(
+            image_difficulties=image_difficulties,
+            scoring_weight_mode=weight_mode,
+            selected_object_weight=float(w1),
+            selected_false_positive_weight=float(auto_w2),
+        )
+
+    def _select_false_positive_weight(
+        self,
+        image_rows: List[Dict],
+        object_weight: float,
+        fixed_false_positive_weight: float,
+        weight_mode: str,
+    ) -> float:
+        if weight_mode == "fixed":
+            return float(fixed_false_positive_weight)
+
+        if not image_rows:
+            return 0.0
+
+        avg_obj = [float(row["avg_object_score"]) for row in image_rows]
+        fp_rate = [float(row["false_positive_rate"]) for row in image_rows]
+
+        mean_avg_obj = sum(avg_obj) / len(avg_obj) if avg_obj else 0.0
+        mean_fp_rate = sum(fp_rate) / len(fp_rate) if fp_rate else 0.0
+        base_w2 = float(object_weight * mean_avg_obj / mean_fp_rate) if mean_fp_rate > 0 else 0.0
+
+        if weight_mode == "mean_match":
+            return float(base_w2)
+
+        # balance_correlation: minimize |corr(score, miss_rate) - corr(score, fp_rate)|,
+        # then maximize corr(score, miss_rate) + corr(score, fp_rate).
+        miss_rate = [float(row["missed_detections_rate"]) for row in image_rows]
+        max_w2 = max(1.0, base_w2 * 5.0)
+
+        best_w2 = float(base_w2)
+        best_gap = float("inf")
+        best_neg_corr_sum = float("inf")
+
+        for step in range(401):
+            w2 = float(max_w2 * step / 400.0)
+            score = [float(object_weight) * a + w2 * f for a, f in zip(avg_obj, fp_rate)]
+            corr_miss = self._pearson_corr(score, miss_rate)
+            corr_fp = self._pearson_corr(score, fp_rate)
+            gap = abs(corr_miss - corr_fp)
+            neg_corr_sum = -1.0 * (corr_miss + corr_fp)
+
+            if gap < best_gap or (gap == best_gap and neg_corr_sum < best_neg_corr_sum):
+                best_w2 = w2
+                best_gap = gap
+                best_neg_corr_sum = neg_corr_sum
+
+        return float(best_w2)
+
+    @staticmethod
+    def _pearson_corr(x: List[float], y: List[float]) -> float:
+        if len(x) < 2 or len(y) < 2:
+            return 0.0
+
+        n = len(x)
+        mean_x = sum(x) / n
+        mean_y = sum(y) / n
+
+        var_x = sum((xi - mean_x) ** 2 for xi in x)
+        var_y = sum((yi - mean_y) ** 2 for yi in y)
+        if var_x <= 0.0 or var_y <= 0.0:
+            return 0.0
+
+        cov = sum((xi - mean_x) * (yi - mean_y) for xi, yi in zip(x, y))
+        return float(cov / ((var_x ** 0.5) * (var_y ** 0.5)))
 
     @staticmethod
     def _read_yolo_file(path: Path, has_conf: bool) -> List[Tuple[int, Tuple[float, float, float, float], float]]:
@@ -201,7 +307,8 @@ class MinScorer(ScorerInterface):
             matched_gts.add(g_idx)
 
         false_positives = len(preds) - len(matched_preds)
-        denom = max(1, len(gt_boxes))
+        # Normalize by prediction count so FP rate is bounded to [0, 1].
+        denom = max(1, len(preds))
         return float(false_positives / denom)
 
     def _missed_detections_rate(

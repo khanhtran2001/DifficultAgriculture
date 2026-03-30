@@ -1,0 +1,179 @@
+1. Build visual domains with KMeans clustering from per-image color/brightness features.
+2. Load all background images and YOLO labels.
+3. Build object pool from every labeled object in dataset.
+4. Compute number of augmented images:
+   - num_to_generate = max(1, int(total_images * dataset_ratio))
+5. For each generated image:
+   - choose one background image
+   - compute paste_count from existing object count
+   - build compatible object pool for that background
+   - choose objects to copy
+   - paste objects one-by-one with blending
+   - save image and merged labels (old + new boxes)
+
+1. # Visual domain clustering (background-object compatibility)
+
+Source: domain_clusterer.py
+
+For each image:
+- read image as BGR
+- convert to RGB
+- feature vector = [mean_r, mean_g, mean_b, grayscale_mean_brightness]
+
+K selection:
+- if n_samples == 1, assign domain 0
+- if auto_k true:
+  - test k in [2, min(max_k, n_samples - 1)]
+  - fit KMeans(random_state=42, n_init=auto)
+  - pick k with best silhouette score
+- else:
+  - k = min(max_k, max(2, int(sqrt(n_samples))))
+
+Final domain label map:
+- image filename -> integer domain_id
+
+Compatibility rule used later:
+- an object is compatible with a background only if object.domain_id == background.domain_id
+
+2. Data mining and score loading
+
+Source: object_miner.py
+
+Background pool item fields:
+- image_name
+- image_path
+- existing_boxes (YOLO tuples)
+- domain_id
+- simg_score
+
+Object pool item fields:
+- source_image_name
+- source_image_path
+- object_index
+- bbox (YOLO tuple)
+- area_px
+- domain_id
+- sobj_score
+
+### 2.1 How background is chosen
+
+Function: select_background_image
+
+If scoring.mode == random:
+- uniform random choice from all backgrounds
+
+Else:
+- weighted random choice with weight from each background simg_score
+- background_weight_mode controls conversion from score to weight
+
+Weight conversion:
+- linear: weight = max(score, 1e-6)
+- exponential: weight = max(exp(clamp(score * weight_scale, -50, 50)), 1e-6)
+
+### 2.2 How object candidates are chosen
+
+Functions: get_compatible_objects, select_objects_to_copy
+
+Step A: compatibility filter
+- keep objects with same domain_id as chosen background
+Step B: score-targeted pruning (only if scoring.mode != random)
+- sort remaining by sobj_score descending (hardest first)
+- keep top fraction:
+  - keep_count = max(1, int(len(filtered) * top_object_fraction))
+
+Step C: final sampling for pasting
+- target_count determined by synthesizer (section 5)
+- random mode: random.sample without replacement
+- score-targeted mode: weighted sample without replacement
+  - weights from object scores using object_weight_mode
+  - each draw recomputes weights on remaining items
+
+3. Paste count policy
+
+Source: synthesizer.py, calculate_paste_count
+
+Given current_apples = number of existing boxes already in chosen background:
+
+- remaining = max(target_density - current_apples, 0)
+- relative_limit = int(max(current_apples * relative_multiplier, 1))
+- paste_count = min(remaining, relative_limit, max_paste_per_image)
+
+Interpretation:
+- never exceed target density
+- never add too many compared to what image already has
+- global hard cap by max_paste_per_image
+
+4. Placement strategy
+
+Source: synthesizer.py, find_placement_coordinates
+
+Inputs:
+- existing background boxes in YOLO format
+- object crop size (obj_h, obj_w)
+- max_overlap default 0.3
+- max_attempts default 15
+
+If background has no objects:
+- place uniformly random anywhere valid in image
+
+Else:
+1. Convert existing YOLO boxes to pixel xyxy.
+2. Repeat up to 15 attempts:
+   - choose a random existing apple box as anchor
+   - compute jitter radius:
+     - jitter_radius_x = int(max(anchor_w * 1.5, obj_w * 2))
+     - jitter_radius_y = int(max(anchor_h * 1.5, obj_h * 2))
+   - propose (x, y) near anchor with uniform random in expanded neighborhood
+   - clamp inside image
+   - reject if overlap too high with any existing box
+
+Overlap check for each existing box:
+- compute intersection area
+- ioa_existing = intersection / existing_area
+- ioa_prop = intersection / proposed_area
+- reject if ioa_existing > max_overlap OR ioa_prop > max_overlap
+
+If no safe spot in 15 attempts:
+- fallback to fully random valid coordinate
+
+Note:
+- overlap checks only use original background boxes, not newly pasted boxes.
+
+5. Mask handling and object extraction
+
+Source: synthesizer.py
+
+Object crop extraction:
+- convert object YOLO bbox to pixel xyxy on source image
+- crop source RGB patch as object_pixels
+
+Optional segmentation mask:
+- active only if use_mask true and segmentation_masks_dir set
+- mask file search order per source image stem:
+  1) segmentation_masks_dir/stem.png
+  2) segmentation_masks_dir/stem/all_apples_mask.png
+- if mask image has 3 channels, convert to grayscale
+
+Object mask creation from mask crop:
+- if no valid mask crop, use full 255 rectangle mask
+- if mask crop has positives and only one positive value:
+  - binary mask (mask > 0)
+- if multiple positive values:
+  - choose dominant label by pixel count
+  - object mask = pixels equal to that dominant label
+
+This means the object mask is single-instance extraction by dominant region in the crop.
+
+lending method
+
+Source: synthesizer.py, blend_and_paste
+
+Primary method:
+- OpenCV seamlessClone with NORMAL_CLONE
+
+Detailed behavior:
+1. Build uint8 single-channel mask.
+3. Threshold to binary 0/255.
+4. Compute clone center from top-left + half object size.
+5. Clamp center so OpenCV internals stay in valid range near borders.
+6. Run cv2.seamlessClone(src, dst, mask, center, NORMAL_CLONE).

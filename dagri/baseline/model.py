@@ -45,19 +45,13 @@ class Baseline(BaselineInterface):
         self,
         dataset_properties: DatasetProperties,
         model_weight: str,
-        conf_min: float = 0.001,
-        conf_max: float = 0.9,
-        num_points: int = 20,
     ) -> float:
         """
-        Run a grid search on validation set to find the best confidence threshold.
+        Run validation once and find the best confidence threshold from native curves.
         """
         return self.model.get_optimal_conf_threshold_for_scoring(
             dataset_properties=dataset_properties,
             model_weight=model_weight,
-            conf_min=conf_min,
-            conf_max=conf_max,
-            num_points=num_points,
         )
 
 

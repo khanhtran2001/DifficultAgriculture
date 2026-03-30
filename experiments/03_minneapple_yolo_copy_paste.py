@@ -44,7 +44,6 @@ outputs/
 """
 
 # The parent result dir is in the folder results/exp_name
-
 RESULTS_DIR = Path(f"results/{Path(__file__).stem}")
 CONFIG_DIR = Path("/home/khanh/Projects/DifficultyAgri/configs/experiments/minneapple_yolo.yaml")
 
@@ -64,6 +63,7 @@ def run_experiment(config_path: str):
     initial_dataset_config = config_manager.initial_dataset_config
     baseline_model_config = config_manager.baseline_config
     scoring_config = config_manager.scoring_config
+    augmentation_config = config_manager.augmentation_config  
 
     # Initialize result manager
     result_manager = ResultManager()
@@ -79,14 +79,10 @@ def run_experiment(config_path: str):
     # Train baseline model using dataset properties
     train_result_dir = step_2_dir / "train_results"
     baseline_model = Baseline(baseline_model_config)
-    best_weight_path = baseline_model.custom_train(initial_dataset_properties, train_result_dir)
 
+    best_weight_path = "/home/khanh/Projects/DifficultyAgri/results/02_minneapple_yolo_scoring_exp/Step_2_Train_and_Evaluate_BASELINE_MODEL/train_results/best.pt"
     # Evaluate on test set and save returned typed results
-    evaluation_results = baseline_model.custom_evaluate_on_test_set(best_weight_path, initial_dataset_properties)
-    result_manager.save_evaluation_results_to_json(step_2_dir, evaluation_results)
 
-    # Score the dataset using the trained baseline model and save results
-    
     # First we need to get the predictions of the baseline model on the train set to use as reference for scoring
     low_conf_thershold = 0.0001
     iou_threshold = 0.5 # Non-maximum suppression IoU threshold
@@ -123,10 +119,6 @@ def run_experiment(config_path: str):
     )
     result_manager.save_score_results_to_json(step_3_dir, score_results)
     
-
-
-    
-
 
 
 if __name__ == "__main__":

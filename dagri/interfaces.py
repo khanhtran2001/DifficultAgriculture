@@ -4,7 +4,7 @@ This file defines the interfaces for the DifficultyAgri project.
 
 from __future__ import annotations
 from abc import abstractmethod
-from dataclasses import dataclass, field, fields
+from dataclasses import MISSING, dataclass, field, fields
 from typing import Any, Dict, List, Optional
 
 
@@ -162,13 +162,24 @@ class ScoringConfig:
     iou_threshold: float
     object_weight: float
     false_positive_weight: float
+    # fixed: use configured false_positive_weight
+    # mean_match: auto-set w2 = w1 * mean(avg_object_score) / mean(fp_rate)
+    # balance_correlation: auto-search w2 to balance score correlation with miss/fp rates
+    weight_mode: str = "fixed"
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ScoringConfig":
         data = dict(data or {})
         values = _dataclass_kwargs(cls, data)
 
-        required = [f.name for f in fields(cls)]
+        if "weight_mode" not in values:
+            values["weight_mode"] = "fixed"
+
+        required = [
+            f.name
+            for f in fields(cls)
+            if f.default is MISSING and f.default_factory is MISSING
+        ]
         missing = [name for name in required if name not in values]
         if missing:
             raise ValueError(
@@ -179,7 +190,11 @@ class ScoringConfig:
 
 @dataclass
 class ScoringResults:
+    scoring_weight_mode: str 
+    selected_object_weight: float 
+    selected_false_positive_weight: float 
     image_difficulties: List[ImageDifficultyProperties]
+
 
 @dataclass 
 class ImageDifficultyProperties:
@@ -198,6 +213,31 @@ class ObjectDifficultyProperties:
     bounding_box: BoundingBox
     difficulty_score: float
 
+@dataclass
+class AugmentorConfig:
+    mode: str # random_copy_paste, difficulty_based_copy_paste
+    relative_multiplier: float # relative multiplier to the original dataset size, e.g. 1.0 means same number of augmented samples as original dataset, 0.5 means half the number of augmented samples as original dataset, 2.0 means double the number of augmented samples as original dataset.
+    max_paste_objects_per_image: int # maximum number of objects to paste per image, if the number of objects to paste exceeds this number, we will randomly select max_paste_objects_per_image objects to paste.
+    use_mask: bool # whether to use the object masks for copy-paste augmentation, if false, we will use the bounding boxes for copy-paste augmentation.
+    difficulty_weight_mode: Optional[str] = None # only used for difficulty_based_copy_paste mode, easy (low score appear more), hard (high score appear more)
+    difficulty_weight_function: Optional[str] = None # only used for difficulty_based_copy_paste mode, the function to use for calculating the difficulty weight of each object, can be "linear", "exponential"
+    alpha: Optional[float] = None # only used for difficulty_based_copy_paste mode, the alpha parameter for calculating the difficulty weight of each object, only used if difficulty_weight_function is "exponential" or "linear"
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "AugmentorConfig":
+        data = dict(data or {})
+        values = _dataclass_kwargs(cls, data)
+        required = [
+            f.name
+            for f in fields(cls)
+            if f.default is MISSING and f.default_factory is MISSING
+        ]
+        missing = [name for name in required if name not in values]
+        if missing:
+            raise ValueError(
+                "Missing required augmentation config field(s): " + ", ".join(missing)
+            )
+        return cls(**values)
 
 
 # Module Interfaces
@@ -252,16 +292,26 @@ class BaselineInterface:
 
 
 class ScorerInterface:
-    def score(self, scoring_config: dict) -> dict:
+
+    @abstractmethod
+    def score(
+        self,
+        optimal_conf_threshold_prediction_dir: str,
+        low_conf_prediction_dir: str,
+        images_dir: str,
+        labels_dir: str,
+    ) -> ScoringResults:
         """
-        Score the model based on the provided scoring configuration.
+        Score dataset samples using prediction directories and explicit image/label folders.
         """
         pass
 
 
 class AugmentorInterface:
-    def create_new_train_dataset(self, augmentation_config: dict) -> dict:
+
+    @abstractmethod
+    def create_new_dataset(self, initial_dataset_properties: DatasetProperties, scoring_results: ScoringResults, new_dataset_path: str) -> DatasetProperties:
         """
-        Apply data augmentation based on the provided augmentation configuration.
+        Create a new augmented dataset based on the initial dataset properties and scoring results, and save it to the specified new dataset path. Return the properties of the new augmented dataset.
         """
         pass

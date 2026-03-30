@@ -4,6 +4,7 @@ import shutil
 import yaml
 import tempfile
 from pathlib import Path
+import numpy as np
 
 from ultralytics import YOLO
 from pycocotools.coco import COCO
@@ -255,75 +256,73 @@ class YoloUltralyticsModel:
         self,
         dataset_properties: DatasetProperties,
         model_weight: str,
-        conf_min: float = 0.001,
-        conf_max: float = 0.9,
-        num_points: int = 20,
     ) -> float:
         """
-        Grid-search confidence thresholds on the validation split and return the best threshold.
+        Run validation once and select confidence threshold from the native F1 curve.
 
-        Selection criterion: maximize validation mAP50.
+        Uses val_metrics.box confidence/F1 arrays computed by Ultralytics and picks the
+        confidence value at maximum F1.
+
         """
         if not os.path.exists(model_weight):
             raise FileNotFoundError(f"Model weight file not found: {model_weight}")
         if not dataset_properties.val_images_dir or not dataset_properties.val_labels_dir:
             raise ValueError("dataset_properties must include val_images_dir and val_labels_dir")
-        if num_points < 2:
-            raise ValueError("num_points must be >= 2")
-        if not (0.0 <= conf_min < conf_max <= 1.0):
-            raise ValueError("conf_min/conf_max must satisfy 0.0 <= conf_min < conf_max <= 1.0")
 
         model = YOLO(model_weight)
 
-        thresholds = [
-            conf_min + (conf_max - conf_min) * (i / (num_points - 1))
-            for i in range(num_points)
-        ]
-
-        best_conf = thresholds[0]
-        best_score = -1.0
-
         with tempfile.TemporaryDirectory(prefix="conf_threshold_search_") as tmp_dir:
             data_path = self._create_data_yaml(dataset_properties, tmp_dir)
+            # Use a low confidence once to preserve predictions needed for full PR/F1 curves.
+            val_kwargs = {
+                "data": data_path,
+                "split": "val",
+                "conf": 0.001,
+                "save_json": False,
+                "plots": False,
+                "verbose": False,
+            }
 
-            for conf in thresholds:
-                val_kwargs = {
-                    "data": data_path,
-                    "split": "val",
-                    "conf": float(conf),
-                    "save_json": False,
-                    "plots": False,
-                    "verbose": False,
-                }
+            if self.evaluation_config.image_size is not None:
+                val_kwargs["imgsz"] = self.evaluation_config.image_size
+            if self.evaluation_config.iou_threshold is not None:
+                val_kwargs["iou"] = self.evaluation_config.iou_threshold
+            if self.evaluation_config.max_detections is not None:
+                val_kwargs["max_det"] = self.evaluation_config.max_detections
 
-                if self.evaluation_config.image_size is not None:
-                    val_kwargs["imgsz"] = self.evaluation_config.image_size
-                if self.evaluation_config.iou_threshold is not None:
-                    val_kwargs["iou"] = self.evaluation_config.iou_threshold
-                if self.evaluation_config.max_detections is not None:
-                    val_kwargs["max_det"] = self.evaluation_config.max_detections
+            val_metrics = model.val(**val_kwargs)
 
-                val_result = model.val(**val_kwargs)
-                map50 = self._extract_map50(val_result)
+        box = getattr(val_metrics, "box", None)
+        if box is None:
+            raise RuntimeError("Validation result has no 'box' metrics to extract F1 curve")
 
-                if map50 > best_score:
-                    best_score = map50
-                    best_conf = conf
+        # Ultralytics stores confidence x-axis and F1 curve arrays on the box metric.
+        conf_curve = getattr(box, "px", None)
+        f1_curve = getattr(box, "f1_curve", None)
+        if conf_curve is None or f1_curve is None:
+            curves = getattr(box, "curves_results", None)
+            if isinstance(curves, (list, tuple)) and len(curves) >= 3:
+                conf_curve = curves[0]
+                f1_curve = curves[2]
 
+        if conf_curve is None or f1_curve is None:
+            raise RuntimeError("Could not extract confidence/F1 curve arrays from val_metrics.box")
+
+        conf_arr = np.asarray(conf_curve, dtype=float).reshape(-1)
+        f1_arr = np.asarray(f1_curve, dtype=float)
+        if f1_arr.ndim > 1:
+            # Multi-class: aggregate to one global curve.
+            f1_arr = np.nanmean(f1_arr, axis=0)
+        f1_arr = f1_arr.reshape(-1)
+
+        if conf_arr.size == 0 or f1_arr.size == 0:
+            raise RuntimeError("Empty confidence/F1 curve arrays in validation metrics")
+
+        if conf_arr.size != f1_arr.size:
+            min_len = min(conf_arr.size, f1_arr.size)
+            conf_arr = conf_arr[:min_len]
+            f1_arr = f1_arr[:min_len]
+
+        best_idx = int(np.nanargmax(f1_arr))
+        best_conf = float(conf_arr[best_idx])
         return float(round(best_conf, 6))
-
-    @staticmethod
-    def _extract_map50(val_result) -> float:
-        """
-        Robustly extract mAP50 from Ultralytics validation results.
-        """
-        box_metrics = getattr(val_result, "box", None)
-        if box_metrics is not None and hasattr(box_metrics, "map50"):
-            return float(box_metrics.map50)
-
-        results_dict = getattr(val_result, "results_dict", None) or {}
-        for key in ("metrics/mAP50(B)", "metrics/mAP50", "map50"):
-            if key in results_dict:
-                return float(results_dict[key])
-
-        raise RuntimeError("Could not extract mAP50 from validation results")
