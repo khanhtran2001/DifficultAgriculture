@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +34,13 @@ class CopyPasteAugmentor(AugmentorInterface):
         train_img_out.mkdir(parents=True, exist_ok=True)
         train_lbl_out.mkdir(parents=True, exist_ok=True)
 
+        removed_images, removed_labels = self._remove_previous_augmented_outputs(train_img_out, train_lbl_out)
+        if removed_images or removed_labels:
+            print(
+                "[Augmentor] Cleaned previous synthetic outputs: "
+                f"images={removed_images}, labels={removed_labels}"
+            )
+
         self._copy_original_train_split(Path(train_images_dir), Path(train_labels_dir), train_img_out, train_lbl_out)
 
         mode = str(self.config.get("mode", "difficulty_based_copy_paste")).lower()
@@ -44,6 +52,13 @@ class CopyPasteAugmentor(AugmentorInterface):
         max_paste_per_image = int(self.config.get("max_paste_objects_per_image", 8))
         use_mask = bool(self.config.get("use_mask", False))
         masks_dir = self.config.get("segmentation_masks_dir")
+        if "blending_method" not in self.config:
+            raise ValueError(
+                "augmentation_config.blending_method is required. "
+                "Use 'seamless_clone', 'alpha', 'none', or 'lab_gaussian'."
+            )
+        blending_method = str(self.config["blending_method"]).lower().strip()
+        lab_gaussian_kernel_size = int(self.config.get("lab_gaussian_kernel_size", 15))
 
         image_extensions = self.config.get("image_extensions", [".jpg", ".jpeg", ".png", ".bmp", ".webp"])
         auto_k = bool(self.config.get("auto_k", True))
@@ -82,9 +97,17 @@ class CopyPasteAugmentor(AugmentorInterface):
             max_paste_per_image=max_paste_per_image,
             use_mask=use_mask,
             segmentation_masks_dir=masks_dir,
+            blending_method=blending_method,
+            lab_gaussian_kernel_size=lab_gaussian_kernel_size,
         )
 
+        print(f"[Augmentor] {synthesizer.get_mask_config_summary()}")
+        print(f"[Augmentor] Blending method: {blending_method}")
+        if blending_method == "lab_gaussian":
+            print(f"[Augmentor] LAB Gaussian effective kernel size: {synthesizer.lab_gaussian_kernel_size}")
+
         num_to_generate = max(1, int(miner.total_images * dataset_ratio))
+        print(f"[Augmentor] Generating {num_to_generate} new images...")
         for i in range(num_to_generate):
             bg = miner.select_background_image()
             paste_count = synthesizer.calculate_paste_count(len(bg.existing_boxes))
@@ -99,6 +122,10 @@ class CopyPasteAugmentor(AugmentorInterface):
             cv2.imwrite(str(out_img_path), aug_image)
             merged_boxes = list(bg.existing_boxes) + list(new_boxes)
             self._write_yolo_labels(out_lbl_path, merged_boxes)
+            self._print_progress(i + 1, num_to_generate)
+
+        print()
+        print("[Augmentor] Augmentation generation completed")
 
         return DatasetProperties(
             root_dir=str(output_root),
@@ -131,3 +158,31 @@ class CopyPasteAugmentor(AugmentorInterface):
         with open(path, "w", encoding="utf-8") as f:
             for cls_id, xc, yc, w, h in boxes:
                 f.write(f"{int(cls_id)} {float(xc):.6f} {float(yc):.6f} {float(w):.6f} {float(h):.6f}\n")
+
+    @staticmethod
+    def _remove_previous_augmented_outputs(images_dir: Path, labels_dir: Path) -> tuple[int, int]:
+        removed_images = 0
+        removed_labels = 0
+
+        for p in images_dir.glob("aug_*.*"):
+            if p.is_file():
+                p.unlink()
+                removed_images += 1
+
+        for p in labels_dir.glob("aug_*.txt"):
+            if p.is_file():
+                p.unlink()
+                removed_labels += 1
+
+        return removed_images, removed_labels
+
+    @staticmethod
+    def _print_progress(current: int, total: int) -> None:
+        if total <= 0:
+            return
+        width = 30
+        ratio = max(0.0, min(float(current) / float(total), 1.0))
+        done = int(width * ratio)
+        bar = "#" * done + "-" * (width - done)
+        sys.stdout.write(f"\r[Augmentor] Progress: [{bar}] {current}/{total} ({ratio * 100:.1f}%)")
+        sys.stdout.flush()

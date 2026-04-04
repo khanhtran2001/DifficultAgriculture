@@ -81,13 +81,15 @@ augmentation_config:
   # Paste policy
   # Train density stats: median~39, p75~60, p90~88
   # Use p75-like target to increase objects on sparse scenes only.
-  target_density: 60
+  target_density: 50 
   paste_relative_multiplier: 1.0
   max_paste_objects_per_image: 20
 
   # Mask-based blending
-  use_mask: false
-  segmentation_masks_dir: null
+  use_mask: true 
+  segmentation_masks_dir: "/home/khanh/Projects/DifficultyAgri/datasets/minneapple/raw/MinneAppleDetection/detection/train/masks" 
+  blending_method: "lab_gaussian"    # seamless_clone | alpha | none | lab_gaussian
+  lab_gaussian_kernel_size: 15
 
   # Visual-domain clustering
   image_extensions: [".jpg", ".jpeg", ".png", ".bmp", ".webp"]
@@ -96,11 +98,10 @@ augmentation_config:
 
   # Score-targeted mining and sampling controls
   # Object score stats: p95~0.677, p99~1.0
-  top_object_fraction: 1
-  object_noise_cap: 1 
+  top_object_fraction: 0.3
+  object_noise_cap: 0.8 
   # Object area (px) stats: p75~1056, p90~1470, p95~1748
   max_object_area_px: 10000 
   weight_scale: 3.5
   background_weight_mode: "exponential"  # linear | exponential
   object_weight_mode: "exponential" # linear | exponential
-

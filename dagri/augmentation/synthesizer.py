@@ -17,13 +17,38 @@ class ImageSynthesizer:
 		max_paste_per_image: int = 8,
 		use_mask: bool = False,
 		segmentation_masks_dir: str | None = None,
+		blending_method: str = "seamless_clone",
+		lab_gaussian_kernel_size: int = 15,
 	):
 		self.target_density = int(target_density)
 		self.relative_multiplier = float(relative_multiplier)
 		self.max_paste_per_image = int(max_paste_per_image)
 		self.use_mask = bool(use_mask)
 		self.segmentation_masks_dir = Path(segmentation_masks_dir).resolve() if segmentation_masks_dir else None
+		self.blending_method = str(blending_method).lower().strip()
+		if self.blending_method not in {"seamless_clone", "alpha", "none", "lab_gaussian"}:
+			raise ValueError(
+				"Unsupported blending_method="
+				f"'{blending_method}'. Use 'seamless_clone', 'alpha', 'none', or 'lab_gaussian'."
+			)
+		kernel = int(lab_gaussian_kernel_size)
+		if kernel < 1:
+			kernel = 1
+		if kernel % 2 == 0:
+			kernel += 1
+		self.lab_gaussian_kernel_size = kernel
 		self._source_mask_cache: dict[str, np.ndarray | None] = {}
+		# Guardrails for strict Poisson mode to fail early with clear diagnostics.
+		self._min_poisson_dim_px = 8
+		self._min_poisson_mask_pixels = 16
+
+	def get_mask_config_summary(self) -> str:
+		if not self.use_mask:
+			return "Mask usage: disabled (use_mask=False)"
+		if self.segmentation_masks_dir is None:
+			return "Mask usage: enabled but segmentation_masks_dir is not set"
+		exists = self.segmentation_masks_dir.exists()
+		return f"Mask usage: enabled, directory={self.segmentation_masks_dir} (exists={exists})"
 
 	def _load_source_mask(self, source_image_path: Path) -> np.ndarray | None:
 		if not self.use_mask or self.segmentation_masks_dir is None:
@@ -147,6 +172,7 @@ class ImageSynthesizer:
 		object_pixels: np.ndarray,
 		object_mask: np.ndarray,
 		top_left: tuple[int, int],
+		debug_tag: str = "",
 	) -> tuple[np.ndarray, tuple[int, int, int, int]]:
 		x, y = top_left
 		obj_h, obj_w = object_pixels.shape[:2]
@@ -162,6 +188,21 @@ class ImageSynthesizer:
 		if mask.max() == 0:
 			return bg_img, (x, y, x, y)
 
+		if self.blending_method == "seamless_clone":
+			mask_nonzero = int(np.count_nonzero(mask))
+			if obj_h < self._min_poisson_dim_px or obj_w < self._min_poisson_dim_px:
+				raise RuntimeError(
+					"Poisson precheck failed: object crop is too small for stable seamlessClone. "
+					f"debug={debug_tag}; obj_size=({obj_h},{obj_w}), "
+					f"min_required={self._min_poisson_dim_px}px"
+				)
+			if mask_nonzero < self._min_poisson_mask_pixels:
+				raise RuntimeError(
+					"Poisson precheck failed: mask is too sparse for stable seamlessClone. "
+					f"debug={debug_tag}; mask_nonzero={mask_nonzero}, "
+					f"min_required={self._min_poisson_mask_pixels}"
+				)
+
 		src = np.ascontiguousarray(object_pixels.astype(np.uint8))
 		dst = np.ascontiguousarray(bg_img.astype(np.uint8))
 
@@ -171,14 +212,121 @@ class ImageSynthesizer:
 		center_y = max(obj_h // 2, min(center_y, bg_h - ((obj_h + 1) // 2)))
 		center = (int(center_x), int(center_y))
 
-		try:
-			bg_img = cv2.seamlessClone(src, dst, mask, center, cv2.NORMAL_CLONE)
-		except cv2.error:
+		if self.blending_method == "none":
+			# Hard paste with mask, no blending.
+			mask_bool = mask > 0
+			bg_roi = bg_img[y : y + obj_h, x : x + obj_w]
+			bg_roi[mask_bool] = src[mask_bool]
+			bg_img[y : y + obj_h, x : x + obj_w] = bg_roi
+		elif self.blending_method == "lab_gaussian":
+			corrected_src = self._lab_color_match(src, roi)
+			blended = self._gaussian_blend(corrected_src, roi, mask, self.lab_gaussian_kernel_size)
+			bg_img[y : y + obj_h, x : x + obj_w] = blended
+		elif self.blending_method == "alpha":
 			alpha = np.expand_dims(mask.astype(np.float32) / 255.0, axis=-1)
 			blended = (src.astype(np.float32) * alpha) + (roi.astype(np.float32) * (1.0 - alpha))
 			bg_img[y : y + obj_h, x : x + obj_w] = np.clip(blended, 0, 255).astype(np.uint8)
+		else:
+			self._validate_poisson_inputs(src, dst, mask, center, (x, y), debug_tag)
+			try:
+				bg_img = cv2.seamlessClone(src, dst, mask, center, cv2.NORMAL_CLONE)
+			except cv2.error as exc:
+				non_zero = int(np.count_nonzero(mask))
+				raise RuntimeError(
+					"OpenCV seamlessClone failed with strict Poisson mode. "
+					f"debug={debug_tag}; src_shape={src.shape}, dst_shape={dst.shape}, "
+					f"mask_shape={mask.shape}, mask_nonzero={non_zero}, center={center}, top_left={(x, y)}; "
+					f"opencv_error={exc}"
+				) from exc
 
 		return bg_img, (x, y, x + obj_w, y + obj_h)
+
+	@staticmethod
+	def _lab_color_match(source_crop: np.ndarray, target_region: np.ndarray) -> np.ndarray:
+		source_lab = cv2.cvtColor(source_crop, cv2.COLOR_BGR2LAB).astype(np.float32)
+		target_lab = cv2.cvtColor(target_region, cv2.COLOR_BGR2LAB).astype(np.float32)
+
+		for channel in range(3):
+			src_plane = source_lab[:, :, channel]
+			tgt_plane = target_lab[:, :, channel]
+
+			src_mean = float(np.mean(src_plane))
+			src_std = float(np.std(src_plane))
+			tgt_mean = float(np.mean(tgt_plane))
+			tgt_std = float(np.std(tgt_plane))
+
+			if src_std > 1e-6:
+				source_lab[:, :, channel] = ((src_plane - src_mean) * (tgt_std / src_std)) + tgt_mean
+
+		source_lab = np.clip(source_lab, 0, 255).astype(np.uint8)
+		return cv2.cvtColor(source_lab, cv2.COLOR_LAB2BGR)
+
+	@staticmethod
+	def _gaussian_blend(
+		source_img: np.ndarray,
+		target_img: np.ndarray,
+		mask: np.ndarray,
+		kernel_size: int,
+	) -> np.ndarray:
+		kernel = max(1, int(kernel_size))
+		if kernel % 2 == 0:
+			kernel += 1
+
+		mask_f = mask.astype(np.float32) / 255.0
+		smooth_alpha = cv2.GaussianBlur(mask_f, (kernel, kernel), 0)
+		smooth_alpha = np.clip(smooth_alpha, 0.0, 1.0)
+		smooth_alpha = np.expand_dims(smooth_alpha, axis=-1)
+
+		blended = (source_img.astype(np.float32) * smooth_alpha) + (
+			target_img.astype(np.float32) * (1.0 - smooth_alpha)
+		)
+		return np.clip(blended, 0, 255).astype(np.uint8)
+
+	def _validate_poisson_inputs(
+		self,
+		src: np.ndarray,
+		dst: np.ndarray,
+		mask: np.ndarray,
+		center: tuple[int, int],
+		top_left: tuple[int, int],
+		debug_tag: str,
+	) -> None:
+		x, y = top_left
+		obj_h, obj_w = src.shape[:2]
+		bg_h, bg_w = dst.shape[:2]
+		mask_nonzero = int(np.count_nonzero(mask))
+
+		if src.ndim != 3 or src.shape[2] != 3:
+			raise RuntimeError(f"Invalid Poisson source image format: shape={src.shape}; debug={debug_tag}")
+		if dst.ndim != 3 or dst.shape[2] != 3:
+			raise RuntimeError(f"Invalid Poisson destination image format: shape={dst.shape}; debug={debug_tag}")
+		if mask.ndim != 2:
+			raise RuntimeError(f"Invalid Poisson mask format: shape={mask.shape}; debug={debug_tag}")
+		if src.dtype != np.uint8 or dst.dtype != np.uint8 or mask.dtype != np.uint8:
+			raise RuntimeError(
+				f"Poisson requires uint8 inputs: src={src.dtype}, dst={dst.dtype}, mask={mask.dtype}; debug={debug_tag}"
+			)
+		if mask.shape != src.shape[:2]:
+			raise RuntimeError(
+				f"Mask/source size mismatch: mask={mask.shape}, src={src.shape[:2]}; debug={debug_tag}"
+			)
+		if obj_h < self._min_poisson_dim_px or obj_w < self._min_poisson_dim_px:
+			raise RuntimeError(
+				f"Poisson patch too small: src_shape={src.shape}, min_dim={self._min_poisson_dim_px}; debug={debug_tag}"
+			)
+		if mask_nonzero < self._min_poisson_mask_pixels:
+			raise RuntimeError(
+				f"Poisson mask too sparse: nonzero={mask_nonzero}, min_required={self._min_poisson_mask_pixels}; debug={debug_tag}"
+			)
+
+		cx, cy = center
+		half_w = obj_w // 2
+		half_h = obj_h // 2
+		if (cx - half_w) < 0 or (cy - half_h) < 0 or (cx + (obj_w - half_w)) > bg_w or (cy + (obj_h - half_h)) > bg_h:
+			raise RuntimeError(
+				"Poisson center places patch outside destination bounds: "
+				f"center={center}, src_shape={src.shape}, dst_shape={dst.shape}, top_left={(x, y)}; debug={debug_tag}"
+			)
 
 	def execute_paste(
 		self,
@@ -191,6 +339,7 @@ class ImageSynthesizer:
 
 		image_h, image_w = background.shape[:2]
 		new_boxes: list[tuple[int, float, float, float, float]] = []
+		skipped_objects = 0
 
 		for obj in objects_to_copy:
 			source = cv2.imread(str(obj.source_image_path), cv2.IMREAD_COLOR)
@@ -219,9 +368,30 @@ class ImageSynthesizer:
 				obj_w,
 			)
 
-			background, bbox_xyxy = self.blend_and_paste(background, object_pixels, object_mask, (place_x, place_y))
+			debug_tag = (
+				f"bg={bg_image_data.image_name}, src={obj.source_image_name}, obj_idx={obj.object_index}"
+			)
+			try:
+				background, bbox_xyxy = self.blend_and_paste(
+					background,
+					object_pixels,
+					object_mask,
+					(place_x, place_y),
+					debug_tag=debug_tag,
+				)
+			except RuntimeError as exc:
+				skipped_objects += 1
+				print(f"[Augmentor][Skip] {exc}")
+				continue
+
 			yolo_box = self._xyxy_to_yolo(*bbox_xyxy, image_w=image_w, image_h=image_h)
 			new_boxes.append((class_id, *yolo_box))
+
+		if skipped_objects > 0:
+			print(
+				f"[Augmentor] Background {bg_image_data.image_name}: "
+				f"skipped {skipped_objects} object(s) due to blending constraints"
+			)
 
 		return background, new_boxes
 

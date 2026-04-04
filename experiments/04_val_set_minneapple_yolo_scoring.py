@@ -95,7 +95,7 @@ def run_experiment(config_path: str):
         multiplier=3,
     )
     print(f"Auto max_det from p99 object count x3: {max_det}")
-    image_dir = "datasets/minneapple/yolo_format/minneapple_yolo/train/images"
+    image_dir = "datasets/minneapple/yolo_format/minneapple_yolo/test/images"
     low_conf_prediction_dir = f"{step_2_dir}/low_conf_predictions"
     low_conf_predictions = baseline_model.custom_predict(model_weight=best_weight_path, image_dir=image_dir, conf=low_conf_thershold, iou=iou_threshold, max_det=max_det)
     result_manager.save_prediction_results(low_conf_prediction_dir, low_conf_predictions)
@@ -117,8 +117,8 @@ def run_experiment(config_path: str):
     score_results = scoring.score(
         optimal_conf_threshold_prediction_dir,
         low_conf_prediction_dir,
-        images_dir=initial_dataset_properties.train_images_dir,
-        labels_dir=initial_dataset_properties.train_labels_dir,
+        images_dir=initial_dataset_properties.test_images_dir,
+        labels_dir=initial_dataset_properties.test_labels_dir,
     )
     result_manager.save_score_results_to_json(step_3_dir, score_results)
 

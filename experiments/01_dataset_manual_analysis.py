@@ -45,7 +45,7 @@ outputs/
 
 # The parent result dir is in the folder results/exp_name
 RESULTS_DIR = Path(f"results/{Path(__file__).stem}")
-CONFIG_DIR = Path("/home/khanh/Projects/DifficultyAgri/configs/experiments/minneapple_yolo.yaml")
+CONFIG_DIR = Path("/home/khanh/Projects/DifficultyAgri/configs/experiments/global_wheat_head_yolo.yaml")
 
 
 
@@ -62,8 +62,6 @@ def run_experiment(config_path: str):
     config_manager.load_all_configs(config_path)
     initial_dataset_config = config_manager.initial_dataset_config
     baseline_model_config = config_manager.baseline_config
-    scoring_config = config_manager.scoring_config
-    augmentation_config = config_manager.augmentation_config  
 
     # Initialize result manager
     result_manager = ResultManager()

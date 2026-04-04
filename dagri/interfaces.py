@@ -219,6 +219,7 @@ class AugmentorConfig:
     relative_multiplier: float # relative multiplier to the original dataset size, e.g. 1.0 means same number of augmented samples as original dataset, 0.5 means half the number of augmented samples as original dataset, 2.0 means double the number of augmented samples as original dataset.
     max_paste_objects_per_image: int # maximum number of objects to paste per image, if the number of objects to paste exceeds this number, we will randomly select max_paste_objects_per_image objects to paste.
     use_mask: bool # whether to use the object masks for copy-paste augmentation, if false, we will use the bounding boxes for copy-paste augmentation.
+    blending_method: Optional[str] = None # seamless_clone | alpha | none | lab_gaussian
     difficulty_weight_mode: Optional[str] = None # only used for difficulty_based_copy_paste mode, easy (low score appear more), hard (high score appear more)
     difficulty_weight_function: Optional[str] = None # only used for difficulty_based_copy_paste mode, the function to use for calculating the difficulty weight of each object, can be "linear", "exponential"
     alpha: Optional[float] = None # only used for difficulty_based_copy_paste mode, the alpha parameter for calculating the difficulty weight of each object, only used if difficulty_weight_function is "exponential" or "linear"

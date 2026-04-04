@@ -1,0 +1,104 @@
+# Global Wheat Head YOLO pipeline configuration
+#
+# Dataset expected layout:
+#   root_dir/
+#     train/images, train/labels
+#     val/images,   val/labels
+#     test/images,  test/labels (optional but recommended)
+
+
+# General configuration
+general:
+  random_seed: [123, 456, 789]
+
+
+# Dataset configuration
+dataset_config:
+  name: global_wheat_head
+  type: "yolo_detection"
+  root_dir: /home/khanh/Projects/DifficultyAgri/datasets/global_wheat_head/yolo_format/global_wheat_head_yolo
+  train_mask_dir: null
+  num_classes: 1
+  class_names: ["wheat_head"]
+
+
+# Model configuration
+baseline_config:
+  name: yolov8s
+  model_type: "yolo"
+  pretrained_weights_path: "/home/khanh/Projects/DifficultyAgri/finetuned_baseline_model/yolov8s.pt"
+
+  training_config:
+    epochs: 100
+    batch_size: 16
+    input_size: 1024
+    learning_rate: 0.01
+    early_stopping_patience: 8 
+    seed: 123
+
+    augmentation:
+      # Color
+      hsv_h: 0.015
+      hsv_s: 0.7
+      hsv_v: 0.4
+
+      # Geometry
+      degrees: 10.0
+      translate: 0.1
+      scale: 0.4
+      shear: 0.0
+      perspective: 0.0
+
+      # Flips (Global Wheat is top-down; vertical flip is typically safe)
+      fliplr: 0.5
+      flipud: 0.5
+
+  evaluation_config:
+    image_size: 1024
+    confidence_threshold: 0.001
+    iou_threshold: 0.5
+    max_detections: 600
+    metrics: ["mAP", "AP_50", "AP_75", "AP_small", "AP_medium", "AP_large"]
+
+
+# Scoring configuration
+scoring_config:
+  type: "min_scorer"
+  alpha: 0.5
+  beta: 0.5
+  iou_threshold: 0.5
+  weight_mode: "balance_correlation"  # fixed | mean_match | balance_correlation
+  object_weight: 0.9
+  false_positive_weight: 0.1
+
+
+# Copy-paste augmentation configuration
+augmentation_config:
+  mode: "difficulty_based_copy_paste"  # random_copy_paste | difficulty_based_copy_paste
+
+  # Number of generated augmented images = int(num_train_images * dataset_ratio)
+  dataset_ratio: 0.4
+
+  # Paste policy
+  target_density: 60
+  paste_relative_multiplier: 1.0
+  max_paste_objects_per_image: 25
+
+  # Mask and blending
+  use_mask: false
+  segmentation_masks_dir: null
+  blending_method: "none"  # seamless_clone | alpha | none | lab_gaussian
+  lab_gaussian_kernel_size: 15
+
+  # Visual-domain clustering
+  image_extensions: [".jpg", ".jpeg", ".png", ".bmp", ".webp"]
+  auto_k: true
+  max_k: 8
+
+  # Score-targeted mining and sampling controls
+  top_object_fraction: 0.3
+  object_noise_cap: 1 
+  max_object_area_px: 10000
+  weight_scale: 3.5
+  background_weight_mode: "exponential"  # linear | exponential
+  object_weight_mode: "exponential"  # linear | exponential
