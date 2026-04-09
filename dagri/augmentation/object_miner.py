@@ -44,6 +44,7 @@ class ObjectMiner:
 		weight_scale: float = 3.0,
 		max_object_area_px: float = 1024.0,
 		image_extensions: list[str] | None = None,
+		rng: random.Random | None = None,
 	):
 		self.images_dir = Path(images_dir)
 		self.labels_dir = Path(labels_dir)
@@ -58,6 +59,7 @@ class ObjectMiner:
 		self.image_extensions = {
 			ext.lower() for ext in (image_extensions or [".jpg", ".jpeg", ".png", ".bmp", ".webp"])
 		}
+		self.rng = rng or random.Random()
 
 		self.background_pool: list[BackgroundImageData] = []
 		self.object_pool: list[MinedObject] = []
@@ -157,16 +159,25 @@ class ObjectMiner:
 		if not self.background_pool:
 			raise RuntimeError("Background pool is empty. Did you call load_data()?")
 		if self.scoring_mode == "random":
-			return random.choice(self.background_pool)
+			return self.rng.choice(self.background_pool)
 		weights = self._build_weights([bg.simg_score for bg in self.background_pool], self.background_weight_mode)
-		return random.choices(self.background_pool, weights=weights, k=1)[0]
+		return self.rng.choices(self.background_pool, weights=weights, k=1)[0]
 
 	def get_compatible_objects(self, bg_image: BackgroundImageData) -> list[MinedObject]:
+		return self.get_compatible_objects_for_background(bg_image, same_image_only=False)
+
+	def get_compatible_objects_for_background(
+		self,
+		bg_image: BackgroundImageData,
+		same_image_only: bool = False,
+	) -> list[MinedObject]:
 		compatible = [
 			obj
 			for obj in self.object_pool
 			if obj.domain_id == bg_image.domain_id and obj.area_px < self.max_object_area_px
 		]
+		if same_image_only:
+			compatible = [obj for obj in compatible if obj.source_image_name == bg_image.image_name]
 		if not compatible or self.scoring_mode == "random":
 			return compatible
 
@@ -182,7 +193,7 @@ class ObjectMiner:
 			return []
 		count = min(target_count, len(compatible_pool))
 		if self.scoring_mode == "random":
-			return random.sample(compatible_pool, count)
+			return self.rng.sample(compatible_pool, count)
 		return self._weighted_sample_without_replacement(compatible_pool, count, self.object_weight_mode)
 
 	def _score_to_weight(self, score: float, mode: str) -> float:
@@ -202,7 +213,7 @@ class ObjectMiner:
 			if not remaining:
 				break
 			weights = self._build_weights([item.sobj_score for item in remaining], weight_mode)
-			picked = random.choices(remaining, weights=weights, k=1)[0]
+			picked = self.rng.choices(remaining, weights=weights, k=1)[0]
 			selected.append(picked)
 			remaining.remove(picked)
 		return selected

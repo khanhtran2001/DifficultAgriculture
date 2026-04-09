@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shutil
 import sys
+import random
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,61 @@ from dagri.interfaces import AugmentorInterface, DatasetProperties, ScoringResul
 class CopyPasteAugmentor(AugmentorInterface):
     def __init__(self, config: dict[str, Any] | None):
         self.config = dict(config or {})
+
+    @staticmethod
+    def _parse_optional_positive_int(value: Any) -> int | None:
+        if value in (None, "null"):
+            return None
+        parsed = int(value)
+        return parsed if parsed > 0 else None
+
+    @staticmethod
+    def _object_reuse_key(image_name: str, object_index: int) -> str:
+        return f"{image_name}:{int(object_index)}"
+
+    def _select_background_with_reuse_cap(
+        self,
+        miner: ObjectMiner,
+        background_reuse_counts: dict[str, int],
+        max_background_reuse: int | None,
+        excluded_names: set[str] | None = None,
+    ):
+        excluded_names = excluded_names or set()
+        eligible_backgrounds = [
+            bg
+            for bg in miner.background_pool
+            if bg.image_name not in excluded_names
+            and (
+                max_background_reuse is None
+                or background_reuse_counts.get(bg.image_name, 0) < max_background_reuse
+            )
+        ]
+        if not eligible_backgrounds:
+            return None
+
+        if miner.scoring_mode == "random":
+            return miner.rng.choice(eligible_backgrounds)
+
+        weights = miner._build_weights(
+            [bg.simg_score for bg in eligible_backgrounds],
+            miner.background_weight_mode,
+        )
+        return miner.rng.choices(eligible_backgrounds, weights=weights, k=1)[0]
+
+    def _apply_object_reuse_cap(
+        self,
+        compatible_objects,
+        object_reuse_counts: dict[str, int],
+        max_object_reuse: int | None,
+    ):
+        if max_object_reuse is None:
+            return compatible_objects
+        return [
+            obj
+            for obj in compatible_objects
+            if object_reuse_counts.get(self._object_reuse_key(obj.source_image_name, obj.object_index), 0)
+            < max_object_reuse
+        ]
 
     def create_new_dataset(
         self,
@@ -44,7 +100,8 @@ class CopyPasteAugmentor(AugmentorInterface):
         self._copy_original_train_split(Path(train_images_dir), Path(train_labels_dir), train_img_out, train_lbl_out)
 
         mode = str(self.config.get("mode", "difficulty_based_copy_paste")).lower()
-        scoring_mode = "random" if mode == "random_copy_paste" else "score_targeted"
+        same_image_only = mode in {"same_image_score_based_copy_paste", "same_image_random_copy_paste"}
+        scoring_mode = "random" if mode in {"random_copy_paste", "same_image_random_copy_paste"} else "score_targeted"
 
         dataset_ratio = float(self.config.get("dataset_ratio", self.config.get("relative_multiplier", 0.3)))
         target_density = int(self.config.get("target_density", 12))
@@ -70,6 +127,38 @@ class CopyPasteAugmentor(AugmentorInterface):
         background_weight_mode = str(self.config.get("background_weight_mode", "linear")).lower()
         object_weight_mode = str(self.config.get("object_weight_mode", "linear")).lower()
         max_object_area_px = float(self.config.get("max_object_area_px", 1024.0))
+        selection_seed_raw = self.config.get("selection_seed", None)
+        selection_rng = random.Random(int(selection_seed_raw)) if selection_seed_raw is not None else random.Random()
+        same_image_scale_min = float(self.config.get("same_image_scale_min", 0.75))
+        same_image_scale_max = float(self.config.get("same_image_scale_max", 1.25))
+        same_image_rotation_deg = float(self.config.get("same_image_rotation_deg", 15.0))
+        same_image_min_transformed_area_ratio = float(self.config.get("same_image_min_transformed_area_ratio", 0.5))
+        same_image_max_transformed_area_ratio = float(self.config.get("same_image_max_transformed_area_ratio", 2.0))
+        same_image_min_transformed_side_px = int(self.config.get("same_image_min_transformed_side_px", 8))
+        same_image_max_transformed_side_px_raw = self.config.get("same_image_max_transformed_side_px", None)
+        same_image_max_transformed_side_px = (
+            None
+            if same_image_max_transformed_side_px_raw in (None, "null")
+            else int(same_image_max_transformed_side_px_raw)
+        )
+        max_background_reuse = self._parse_optional_positive_int(self.config.get("max_background_reuse", None))
+        max_object_reuse = self._parse_optional_positive_int(self.config.get("max_object_reuse", None))
+        if same_image_scale_min > same_image_scale_max:
+            same_image_scale_min, same_image_scale_max = same_image_scale_max, same_image_scale_min
+        same_image_scale_min = max(0.05, same_image_scale_min)
+        same_image_scale_max = max(same_image_scale_min, same_image_scale_max)
+        same_image_rotation_deg = max(0.0, same_image_rotation_deg)
+        same_image_min_transformed_area_ratio = max(0.01, same_image_min_transformed_area_ratio)
+        same_image_max_transformed_area_ratio = max(
+            same_image_min_transformed_area_ratio,
+            same_image_max_transformed_area_ratio,
+        )
+        same_image_min_transformed_side_px = max(1, same_image_min_transformed_side_px)
+        if same_image_max_transformed_side_px is not None:
+            same_image_max_transformed_side_px = max(
+                same_image_min_transformed_side_px,
+                same_image_max_transformed_side_px,
+            )
 
         clusterer = DomainClusterer(train_images_dir, image_extensions=image_extensions)
         domain_map = clusterer.extract_visual_domains(auto_k=auto_k, max_k=max_k)
@@ -86,6 +175,7 @@ class CopyPasteAugmentor(AugmentorInterface):
             weight_scale=weight_scale,
             max_object_area_px=max_object_area_px,
             image_extensions=image_extensions,
+            rng=selection_rng,
         )
         miner.load_data(domain_map=domain_map)
         if miner.total_images == 0:
@@ -99,21 +189,79 @@ class CopyPasteAugmentor(AugmentorInterface):
             segmentation_masks_dir=masks_dir,
             blending_method=blending_method,
             lab_gaussian_kernel_size=lab_gaussian_kernel_size,
+            rng=selection_rng,
         )
 
         print(f"[Augmentor] {synthesizer.get_mask_config_summary()}")
         print(f"[Augmentor] Blending method: {blending_method}")
+        if selection_seed_raw is not None:
+            print(f"[Augmentor] Selection seed: {int(selection_seed_raw)}")
         if blending_method == "lab_gaussian":
             print(f"[Augmentor] LAB Gaussian effective kernel size: {synthesizer.lab_gaussian_kernel_size}")
 
         num_to_generate = max(1, int(miner.total_images * dataset_ratio))
+        background_reuse_counts: dict[str, int] = {}
+        object_reuse_counts: dict[str, int] = {}
+        generated_count = 0
         print(f"[Augmentor] Generating {num_to_generate} new images...")
         for i in range(num_to_generate):
-            bg = miner.select_background_image()
-            paste_count = synthesizer.calculate_paste_count(len(bg.existing_boxes))
-            compatible = miner.get_compatible_objects(bg)
-            objects_to_copy = miner.select_objects_to_copy(compatible, paste_count)
-            aug_image, new_boxes = synthesizer.execute_paste(bg, objects_to_copy)
+            bg = None
+            objects_to_copy = []
+            max_background_pick_attempts = max(10, min(200, len(miner.background_pool) * 2))
+            attempted_backgrounds: set[str] = set()
+
+            for _ in range(max_background_pick_attempts):
+                bg_candidate = self._select_background_with_reuse_cap(
+                    miner,
+                    background_reuse_counts,
+                    max_background_reuse,
+                    excluded_names=attempted_backgrounds,
+                )
+                if bg_candidate is None:
+                    break
+
+                attempted_backgrounds.add(bg_candidate.image_name)
+                paste_count = synthesizer.calculate_paste_count(len(bg_candidate.existing_boxes))
+                if paste_count <= 0:
+                    continue
+
+                compatible = miner.get_compatible_objects_for_background(
+                    bg_candidate,
+                    same_image_only=same_image_only,
+                )
+                compatible = self._apply_object_reuse_cap(
+                    compatible,
+                    object_reuse_counts,
+                    max_object_reuse,
+                )
+                candidate_objects = miner.select_objects_to_copy(compatible, paste_count)
+                if not candidate_objects:
+                    continue
+
+                bg = bg_candidate
+                objects_to_copy = candidate_objects
+                break
+
+            if bg is None:
+                print("\n[Augmentor] Stopped early: no eligible background/object candidates left under reuse caps.")
+                break
+
+            scale_factor = 1.0
+            rotation_deg = 0.0
+            if same_image_only and objects_to_copy:
+                scale_factor = selection_rng.uniform(same_image_scale_min, same_image_scale_max)
+                rotation_deg = selection_rng.uniform(-same_image_rotation_deg, same_image_rotation_deg)
+
+            aug_image, new_boxes = synthesizer.execute_paste(
+                bg,
+                objects_to_copy,
+                scale_factor=scale_factor,
+                rotation_deg=rotation_deg,
+                min_transformed_area_ratio=same_image_min_transformed_area_ratio,
+                max_transformed_area_ratio=same_image_max_transformed_area_ratio,
+                min_transformed_side_px=same_image_min_transformed_side_px,
+                max_transformed_side_px=same_image_max_transformed_side_px,
+            )
 
             out_stem = f"aug_{i + 1:04d}_{bg.image_path.stem}"
             out_img_path = train_img_out / f"{out_stem}.jpg"
@@ -122,10 +270,16 @@ class CopyPasteAugmentor(AugmentorInterface):
             cv2.imwrite(str(out_img_path), aug_image)
             merged_boxes = list(bg.existing_boxes) + list(new_boxes)
             self._write_yolo_labels(out_lbl_path, merged_boxes)
-            self._print_progress(i + 1, num_to_generate)
+            background_reuse_counts[bg.image_name] = background_reuse_counts.get(bg.image_name, 0) + 1
+            for obj in objects_to_copy:
+                key = self._object_reuse_key(obj.source_image_name, obj.object_index)
+                object_reuse_counts[key] = object_reuse_counts.get(key, 0) + 1
+
+            generated_count += 1
+            self._print_progress(generated_count, num_to_generate)
 
         print()
-        print("[Augmentor] Augmentation generation completed")
+        print(f"[Augmentor] Augmentation generation completed ({generated_count}/{num_to_generate})")
 
         return DatasetProperties(
             root_dir=str(output_root),

@@ -33,25 +33,34 @@ baseline_config:
     batch_size: 16
     input_size: 1024
     learning_rate: 0.01
-    early_stopping_patience: 8 
-    seed: 123
+    early_stopping_patience: 20 
+    seed: 123 
 
     augmentation:
-      # Color
-      hsv_h: 0.015
-      hsv_s: 0.7
-      hsv_v: 0.4
+      hsv_h: 0.0
+      hsv_s: 0.0
+      hsv_v: 0.0
 
-      # Geometry
-      degrees: 10.0
-      translate: 0.1
-      scale: 0.4
+      # Geometric transforms disabled
+      degrees: 0.0
+      translate: 0.0
+      scale: 0.0
       shear: 0.0
       perspective: 0.0
 
-      # Flips (Global Wheat is top-down; vertical flip is typically safe)
-      fliplr: 0.5
-      flipud: 0.5
+      # Flips disabled
+      fliplr: 0.0
+      flipud: 0.0
+
+      # Ultralytics augmentation controls disabled
+      mosaic: 0.0
+      mixup: 0.0
+      copy_paste: 0.0
+      cutmix: 0.0
+      close_mosaic: 0
+
+    
+      
 
   evaluation_config:
     image_size: 1024
@@ -74,14 +83,14 @@ scoring_config:
 
 # Copy-paste augmentation configuration
 augmentation_config:
-  mode: "difficulty_based_copy_paste"  # random_copy_paste | difficulty_based_copy_paste
+  mode: "same_image_score_based_copy_paste"  # random_copy_paste | difficulty_based_copy_paste | same_image_score_based_copy_paste | same_image_random_copy_paste
 
   # Number of generated augmented images = int(num_train_images * dataset_ratio)
-  dataset_ratio: 0.4
+  dataset_ratio: 0.3
 
   # Paste policy
-  target_density: 60
-  paste_relative_multiplier: 1.0
+  target_density: 50 
+  paste_relative_multiplier: 2.0
   max_paste_objects_per_image: 25
 
   # Mask and blending
@@ -96,9 +105,22 @@ augmentation_config:
   max_k: 8
 
   # Score-targeted mining and sampling controls
-  top_object_fraction: 0.3
+  top_object_fraction: 1
   object_noise_cap: 1 
   max_object_area_px: 10000
-  weight_scale: 3.5
-  background_weight_mode: "exponential"  # linear | exponential
-  object_weight_mode: "exponential"  # linear | exponential
+  weight_scale: 0.5 
+  background_weight_mode: "linear"  # linear | exponential
+  object_weight_mode: "linear"  # linear | exponential
+
+  # Reuse caps (null disables cap)
+  max_background_reuse: 4
+  max_object_reuse: 4
+
+  # Same-image copy-paste transform controls
+  same_image_scale_min: 0.75
+  same_image_scale_max: 1.25
+  same_image_rotation_deg: 15.0
+  same_image_min_transformed_area_ratio: 0.5
+  same_image_max_transformed_area_ratio: 2.0
+  same_image_min_transformed_side_px: 8
+  same_image_max_transformed_side_px: null

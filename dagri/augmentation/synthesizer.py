@@ -19,6 +19,7 @@ class ImageSynthesizer:
 		segmentation_masks_dir: str | None = None,
 		blending_method: str = "seamless_clone",
 		lab_gaussian_kernel_size: int = 15,
+		rng: random.Random | None = None,
 	):
 		self.target_density = int(target_density)
 		self.relative_multiplier = float(relative_multiplier)
@@ -37,6 +38,7 @@ class ImageSynthesizer:
 		if kernel % 2 == 0:
 			kernel += 1
 		self.lab_gaussian_kernel_size = kernel
+		self.rng = rng or random.Random()
 		self._source_mask_cache: dict[str, np.ndarray | None] = {}
 		# Guardrails for strict Poisson mode to fail early with clear diagnostics.
 		self._min_poisson_dim_px = 8
@@ -100,6 +102,84 @@ class ImageSynthesizer:
 		dominant = uniq[int(np.argmax(counts))]
 		return (mask_crop == dominant).astype(np.uint8) * 255
 
+	@staticmethod
+	def _crop_to_mask_bounds(image: np.ndarray, mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+		y_coords, x_coords = np.where(mask > 0)
+		if x_coords.size == 0 or y_coords.size == 0:
+			return image, mask
+
+		x_min = int(x_coords.min())
+		x_max = int(x_coords.max()) + 1
+		y_min = int(y_coords.min())
+		y_max = int(y_coords.max()) + 1
+		return image[y_min:y_max, x_min:x_max], mask[y_min:y_max, x_min:x_max]
+
+	@staticmethod
+	def _resize_pair(
+		image: np.ndarray,
+		mask: np.ndarray,
+		scale_factor: float,
+	) -> tuple[np.ndarray, np.ndarray]:
+		scale_factor = float(scale_factor)
+		if abs(scale_factor - 1.0) < 1e-6:
+			return image, mask
+
+		new_w = max(1, int(round(image.shape[1] * scale_factor)))
+		new_h = max(1, int(round(image.shape[0] * scale_factor)))
+		resized_image = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+		resized_mask = cv2.resize(mask, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
+		return resized_image, resized_mask
+
+	@staticmethod
+	def _rotate_pair(
+		image: np.ndarray,
+		mask: np.ndarray,
+		rotation_deg: float,
+	) -> tuple[np.ndarray, np.ndarray]:
+		rotation_deg = float(rotation_deg)
+		if abs(rotation_deg) < 1e-6:
+			return image, mask
+
+		h, w = image.shape[:2]
+		center = (w / 2.0, h / 2.0)
+		matrix = cv2.getRotationMatrix2D(center, rotation_deg, 1.0)
+		cos_abs = abs(matrix[0, 0])
+		sin_abs = abs(matrix[0, 1])
+		new_w = max(1, int(round((h * sin_abs) + (w * cos_abs))))
+		new_h = max(1, int(round((h * cos_abs) + (w * sin_abs))))
+		matrix[0, 2] += (new_w / 2.0) - center[0]
+		matrix[1, 2] += (new_h / 2.0) - center[1]
+
+		rotated_image = cv2.warpAffine(
+			image,
+			matrix,
+			(new_w, new_h),
+			flags=cv2.INTER_LINEAR,
+			borderMode=cv2.BORDER_CONSTANT,
+			borderValue=(0, 0, 0),
+		)
+		rotated_mask = cv2.warpAffine(
+			mask,
+			matrix,
+			(new_w, new_h),
+			flags=cv2.INTER_NEAREST,
+			borderMode=cv2.BORDER_CONSTANT,
+			borderValue=0,
+		)
+		return rotated_image, rotated_mask
+
+	def transform_object_patch(
+		self,
+		object_pixels: np.ndarray,
+		object_mask: np.ndarray,
+		scale_factor: float = 1.0,
+		rotation_deg: float = 0.0,
+	) -> tuple[np.ndarray, np.ndarray]:
+		transformed_pixels, transformed_mask = self._resize_pair(object_pixels, object_mask, scale_factor)
+		transformed_pixels, transformed_mask = self._rotate_pair(transformed_pixels, transformed_mask, rotation_deg)
+		transformed_pixels, transformed_mask = self._crop_to_mask_bounds(transformed_pixels, transformed_mask)
+		return transformed_pixels, transformed_mask
+
 	def calculate_paste_count(self, current_apples: int) -> int:
 		remaining = max(self.target_density - current_apples, 0)
 		relative_limit = int(max(current_apples * self.relative_multiplier, 1))
@@ -119,7 +199,7 @@ class ImageSynthesizer:
 		max_y = max(image_h - obj_h, 0)
 
 		if not bg_existing_bboxes:
-			return random.randint(0, max_x), random.randint(0, max_y)
+			return self.rng.randint(0, max_x), self.rng.randint(0, max_y)
 
 		pixel_boxes = []
 		for bbox in bg_existing_bboxes:
@@ -130,14 +210,14 @@ class ImageSynthesizer:
 			pixel_boxes.append([x1, y1, x1 + px_w, y1 + px_h])
 
 		for _ in range(max_attempts):
-			tx1, ty1, tx2, ty2 = random.choice(pixel_boxes)
+			tx1, ty1, tx2, ty2 = self.rng.choice(pixel_boxes)
 			tw = tx2 - tx1
 			th = ty2 - ty1
 			jitter_x = int(max(tw * 1.5, obj_w * 2))
 			jitter_y = int(max(th * 1.5, obj_h * 2))
 
-			prop_x = int(random.uniform(tx1 - jitter_x, tx2 + jitter_x))
-			prop_y = int(random.uniform(ty1 - jitter_y, ty2 + jitter_y))
+			prop_x = int(self.rng.uniform(tx1 - jitter_x, tx2 + jitter_x))
+			prop_y = int(self.rng.uniform(ty1 - jitter_y, ty2 + jitter_y))
 			prop_x = min(max(prop_x, 0), max_x)
 			prop_y = min(max(prop_y, 0), max_y)
 
@@ -164,7 +244,7 @@ class ImageSynthesizer:
 			if safe:
 				return prop_x, prop_y
 
-		return random.randint(0, max_x), random.randint(0, max_y)
+		return self.rng.randint(0, max_x), self.rng.randint(0, max_y)
 
 	def blend_and_paste(
 		self,
@@ -332,6 +412,12 @@ class ImageSynthesizer:
 		self,
 		bg_image_data: BackgroundImageData,
 		objects_to_copy: list[MinedObject],
+		scale_factor: float = 1.0,
+		rotation_deg: float = 0.0,
+		min_transformed_area_ratio: float = 0.5,
+		max_transformed_area_ratio: float = 2.0,
+		min_transformed_side_px: int = 8,
+		max_transformed_side_px: int | None = None,
 	) -> tuple[np.ndarray, list[tuple[int, float, float, float, float]]]:
 		background = cv2.imread(str(bg_image_data.image_path), cv2.IMREAD_COLOR)
 		if background is None:
@@ -339,14 +425,13 @@ class ImageSynthesizer:
 
 		image_h, image_w = background.shape[:2]
 		new_boxes: list[tuple[int, float, float, float, float]] = []
-		skipped_objects = 0
+		occupied_boxes = list(bg_image_data.existing_boxes)
 
 		for obj in objects_to_copy:
 			source = cv2.imread(str(obj.source_image_path), cv2.IMREAD_COLOR)
 			if source is None:
 				continue
 
-			source_mask = self._load_source_mask(obj.source_image_path)
 			class_id, xc, yc, w, h = obj.bbox
 			x1, y1, x2, y2 = self._yolo_to_xyxy(xc, yc, w, h, source.shape[1], source.shape[0])
 			if x2 <= x1 or y2 <= y1:
@@ -357,41 +442,30 @@ class ImageSynthesizer:
 				continue
 
 			obj_h, obj_w = object_pixels.shape[:2]
-			mask_crop = source_mask[y1:y2, x1:x2] if source_mask is not None else None
-			object_mask = self._build_object_mask_from_crop(mask_crop, obj_h, obj_w)
+			if obj_h <= 0 or obj_w <= 0:
+				continue
+
+			# Simple check: object should fit within image
+			if obj_h >= image_h or obj_w >= image_w:
+				continue
 
 			place_x, place_y = self.find_placement_coordinates(
-				bg_image_data.existing_boxes,
+				occupied_boxes,
 				image_h,
 				image_w,
 				obj_h,
 				obj_w,
 			)
 
-			debug_tag = (
-				f"bg={bg_image_data.image_name}, src={obj.source_image_name}, obj_idx={obj.object_index}"
-			)
-			try:
-				background, bbox_xyxy = self.blend_and_paste(
-					background,
-					object_pixels,
-					object_mask,
-					(place_x, place_y),
-					debug_tag=debug_tag,
-				)
-			except RuntimeError as exc:
-				skipped_objects += 1
-				print(f"[Augmentor][Skip] {exc}")
-				continue
+			# Simple raw paste: copy pixels directly
+			roi = background[place_y : place_y + obj_h, place_x : place_x + obj_w]
+			if roi.shape[:2] == (obj_h, obj_w):
+				background[place_y : place_y + obj_h, place_x : place_x + obj_w] = object_pixels
 
+			bbox_xyxy = (place_x, place_y, place_x + obj_w, place_y + obj_h)
 			yolo_box = self._xyxy_to_yolo(*bbox_xyxy, image_w=image_w, image_h=image_h)
 			new_boxes.append((class_id, *yolo_box))
-
-		if skipped_objects > 0:
-			print(
-				f"[Augmentor] Background {bg_image_data.image_name}: "
-				f"skipped {skipped_objects} object(s) due to blending constraints"
-			)
+			occupied_boxes.append((class_id, *yolo_box))
 
 		return background, new_boxes
 
