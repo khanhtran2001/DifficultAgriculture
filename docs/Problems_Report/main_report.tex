@@ -1,0 +1,528 @@
+\documentclass[11pt, a4paper]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{titlesec}
+\usepackage{booktabs}
+\usepackage{amsmath}
+
+% Formatting titles
+\titleformat{\section}{\large\bfseries}{\thesection}{1em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{1em}{}
+
+\title{\textbf{Research Update \& Future Directions}}
+\author{Huy Khanh Tran}
+% \date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Objective}
+This report has 3 main objectives:
+\begin{itemize}
+    \item Give details of the current research and experiments.
+    \item State and explain current problems based on recent results.
+    \item Request advice on how to proceed with the next phase of experiments.
+\end{itemize}
+The details of each block, experiment, and configuration are included in the Appendix (\ref{sec:appendix}) for reference.
+
+\vspace{1em}
+\section{Research Summary}
+
+\textbf{The Core Claim:} "Selecting objects for copy-paste augmentation based on empirically measured model failure scores produces better detection improvement than selecting objects randomly, when the dominant failure mode falls within the learnable regime of copy-paste augmentation."
+
+\vspace{0.75em}
+\textbf{The Supporting Claims}
+
+\vspace{0.5em}
+\noindent\textbf{Claim 1 (Score Validity):} \\
+"ImageScorer reliably identifies objects and images where the model fails, as validated by its correlation with actual miss rate and false positive rate across two structurally different datasets."
+
+\vspace{0.5em}
+\noindent\textbf{Claim 2 (Augmentation Effectiveness):} \\
+``Score-guided copy-paste selection outperforms uniform random selection on the detection of learnable objects across multiple seeds and datasets.''
+
+\vspace{1em}
+\noindent\textbf{Current Status:} \\
+We have completed the 2 blocks of experiments for Claim 1 and Claim 2 and analyzed the results. While Claim 1 is largely supported by strong correlations, Claim 2 requires more modification. Specifically, the score-guided copy-paste augmentation is currently showing a \textbf{decrease in overall performance metrics (AP)}. The details of this issue and our proposed fixes are described below.
+
+\vspace{1em}
+\section{Current Problems}
+
+\subsection{Problem 1: Lower score stability on MinneApple when training without traditional augmentation}
+As seen in \hyperlink{exp12}{Appendix Exp 1.2 (Tables 3 and 4)}, the scoring system is highly stable across different seeds for Global Wheat (GWHD) and for MinneApple (MA) \textit{with} traditional augmentation (Pearson $> 0.80$). However, on MinneApple \textit{without} traditional augmentation, the inter-seed correlation drops to $\sim0.67$. 
+\begin{itemize}
+    \item \textbf{Hypothesis:} MinneApple contains heavily clustered, small objects. Without basic augmentations (like color jitter or flipping) to regularize the baseline model, the low-confidence predictions fluctuate wildly between random seeds. This causes the difficulty score for specific objects to become unstable.
+    \item \textbf{My interpretation:} This may indicate that the scoring output is strongly dependent on the baseline model behavior. If the model changes, the score ranking also changes significantly, which makes stability a key requirement before using the score for downstream augmentation decisions.
+\end{itemize}
+
+\subsection{Problem 2: Score-guided copy-paste augmentation decreases overall AP}
+As shown in \hyperlink{exp21}{Appendix Exp 2.1 (Table 7)}, applying the score-guided copy-paste reduced the overall COCO\_AP from the baseline ($0.4472 \rightarrow 0.4280$). 
+\begin{itemize}
+    \item \textbf{The AP75 Drop:} While the AP50 actually \textit{increased} ($0.7743 \rightarrow 0.7882$), the AP75 dropped significantly ($0.4637 \rightarrow 0.4288$). This indicates the model is finding more objects (loose boxes), but its localization precision has degraded. This is likely due to pasting hard, complex objects without blending or masks, causing the model to learn edge artifacts rather than true object boundaries.
+    \item \textbf{The Large Object Drop:} We also saw a severe drop in AP\_large ($0.7191 \rightarrow 0.6271$). Because we use exponential weighting (\texttt{weight\_scale=3.5}) to sample hard objects/backgrounds, we may be over-saturating the images, occluding large objects, or creating highly out-of-distribution scenes.
+\end{itemize}
+
+\vspace{1em}
+\section{Request for Advice}
+Based on the problems above, I have continued running many additional experiments to tune the augmentation hyperparameters.
+
+Some settings gave better results for specific metrics, but most choices still lack a clear scientific reason for why that specific configuration should be preferred. In other words, I can find local improvements, but they are not consistently explainable.
+
+When I look at the average behavior across runs/seeds, the overall performance improvement is still small or not clearly meaningful for this dataset.
+
+Because of that, I would like your guidance on the research direction:
+\begin{itemize}
+    \item Should I continue this line of work and spend more time on principled hyperparameter selection/ablation?
+    \item Or should I pivot to another method/field that may have stronger potential and clearer scientific justification?
+\end{itemize}
+
+If you think I should continue this part, I would also appreciate advice on which of the following directions should be prioritized first:
+
+\begin{enumerate}
+    \item \textbf{Scale the Parameter Search:} If we continue this direction, should I run a broader hyperparameter sweep to identify a robust and reproducible setting?
+    \item \textbf{Try a More Complex Copy-Paste Algorithm:} Should I move to a more advanced copy-paste pipeline (for example, better blending and placement constraints) to improve detection quality on agricultural datasets?
+\end{enumerate}
+
+\newpage
+\section*{Appendix: Research Methodology \& Configurations}
+\label{sec:appendix}
+\textit{This section contains the detailed methodology for reference.}
+
+\subsection*{A. Methodology}
+
+\textbf{Part 1: Scoring System Design}
+
+\vspace{0.5em}
+\noindent\textbf{1. Meaning:} \\
+The \textbf{scoring system} measures how difficult each object and image is for the model.
+\begin{itemize}
+    \item Each \textbf{object} is scored based on how well it is detected.
+    \item Each \textbf{image} is scored based on:
+    \begin{itemize}
+        \item how difficult its objects are
+        \item how many false positives it contains
+    \end{itemize}
+\end{itemize}
+
+\textbf{Important Notes:}
+\begin{itemize}
+    \item Object difficulty is computed using \textbf{low-confidence predictions}.
+    \item False positives are computed using \textbf{optimal-threshold predictions}.
+\end{itemize}
+
+This separation ensures that we capture both:
+\begin{itemize}
+    \item \textbf{model uncertainty} (via low-confidence predictions)
+    \item \textbf{final prediction quality} (via optimal-threshold predictions)
+\end{itemize}
+
+\vspace{0.5em}
+\noindent\rule{\linewidth}{0.4pt}
+
+\textbf{2. Formulation}
+
+\textbf{Object-level score (using low-confidence predictions):}
+\[
+S_{obj}(g)=\min_{p: \operatorname{IoU}(p,g)\ge \tau}
+\left[\alpha(1-\mathrm{conf}(p))+\beta(1-\operatorname{IoU}(p,g))\right]
+\]
+
+\textbf{If no prediction matches:}
+\[
+S_{obj}(g)=\alpha+\beta
+\]
+
+\textbf{Image-level score (using optimal-threshold predictions):}
+\[
+S_{img}(I)=w_1 \cdot \overline{S_{obj}}(I)+w_2 \cdot \mathrm{FP\_rate}(I)
+\]
+
+\vspace{0.5em}
+\noindent\rule{\linewidth}{0.4pt}
+
+\textbf{3. Why two different prediction sets?}
+
+\textbf{Low-confidence predictions (for $S_{obj}$):}
+\begin{itemize}
+    \item Include many candidate detections (even weak ones)
+    \item Allow the scorer to check:
+    \begin{itemize}
+        \item Did the model \textit{almost} detect the object?
+        \item Was there a nearby but low-confidence prediction?
+    \end{itemize}
+    \item This captures \textbf{model awareness}, not just final decisions
+\end{itemize}
+
+\textbf{Optimal-threshold predictions (for FP rate):}
+\begin{itemize}
+    \item Represent the model’s \textbf{final output}
+    \item Used in standard evaluation (precision/recall trade-off)
+    \item Ensure false positives reflect \textbf{real deployment behavior}
+\end{itemize}
+
+\vspace{0.5em}
+\noindent\rule{\linewidth}{0.4pt}
+
+\textbf{4. Explanation of the formulas}
+
+\textbf{Object score:}
+\[
+\alpha(1-\mathrm{conf}) \rightarrow \text{penalty for low confidence}
+\]
+\[
+\beta(1-\mathrm{IoU}) \rightarrow \text{penalty for poor localization}
+\]
+
+\begin{itemize}
+    \item High confidence + high IoU $\Rightarrow$ low score (easy object)
+    \item Low confidence or low IoU $\Rightarrow$ high score (hard object)
+    \item No matching prediction $\Rightarrow$ maximum penalty
+\end{itemize}
+
+\textbf{Image score:}
+\begin{itemize}
+    \item $\overline{S_{obj}}$: average object difficulty
+    \item $\mathrm{FP\_rate}$: fraction of predictions that are incorrect
+\end{itemize}
+
+\begin{itemize}
+    \item Many difficult objects $\Rightarrow$ high score
+    \item Many false positives $\Rightarrow$ high score
+\end{itemize}
+
+\vspace{0.5em}
+\noindent\rule{\linewidth}{0.4pt}
+
+\textbf{5. Parameter table}
+
+\begin{center}
+\small
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{@{}lp{4cm}lp{6.5cm}@{}}
+\toprule
+\textbf{Param} & \textbf{Role} & \textbf{Value/Mode} & \textbf{How it is chosen} \\
+\midrule
+$\alpha$ & Weight of confidence penalty & 0.5 & Set in config. Balances impact of confidence vs localization. \\
+$\beta$ & Weight of IoU penalty & 0.5 & Set in config. Typically equal to $\alpha$ for balanced scoring. \\
+$\tau$ & IoU matching threshold & 0.5 & Standard detection threshold. \\
+$w_1$ & Weight of object difficulty & 0.9 & Chosen so that it balances with the false positive term. \\
+$w_2$ & Weight of false positives & adaptive & Chosen so that it balances with the object difficulty term. \\
+\bottomrule
+\end{tabular}
+}
+\end{center}
+
+\vspace{0.5em}
+\noindent\rule{\linewidth}{0.4pt}
+
+\textbf{6. Computation flow}
+
+\begin{enumerate}
+    \item Train baseline detection model.
+    \item Generate two prediction sets:
+    \begin{itemize}
+        \item Low-confidence predictions (dense, exploratory)
+        \item Optimal-threshold predictions (final outputs)
+    \end{itemize}
+    \item For each image:
+    \begin{enumerate}
+        \item Compute $S_{obj}$ for each object using low-confidence predictions
+        \item Compute average object score
+        \item Compute FP rate using optimal-threshold predictions
+        \item Compute missed detection rate (for analysis only)
+    \end{enumerate}
+    \item Select $w_1$ and $w_2$ to balance the contributions of object difficulty and false positives.
+    \item Compute final image score:
+    \[
+    S_{img}=w_1 \cdot \overline{S_{obj}} + w_2 \cdot \mathrm{FP\_rate}
+    \]
+\end{enumerate}
+
+\vspace{0.5em}
+\noindent\rule{\linewidth}{0.4pt}
+
+\textbf{7. Summary} 
+\begin{itemize}
+    \item Low-confidence predictions $\rightarrow$ measure \textbf{how close the model was}
+    \item Optimal-threshold predictions $\rightarrow$ measure \textbf{final errors}
+    \item Combined score $\rightarrow$ robust measure of \textbf{difficulty}
+\end{itemize}
+\noindent\rule{\linewidth}{0.4pt}
+
+\vspace{2em}
+\subsection*{\textbf{Part 2. Copy-and-Paste Augmentation Pipeline}}
+
+\textbf{Key Idea:} \\
+This part generates additional training data by copying objects from labeled images and pasting them into other images.  
+The goal is to \textbf{intentionally increase difficult training samples}, guided by the scoring system from Part 1.
+\textbf{Instead of random augmentation, this pipeline focuses on hard cases.}  
+Objects and backgrounds are selected based on their \textbf{difficulty scores}, so the model sees more examples it previously struggled with.
+
+\vspace{0.5em}
+\noindent\rule{\linewidth}{0.4pt}
+
+\textbf{How it is done (step-by-step):}
+\begin{enumerate}
+    \item Select a background image.
+    \item Select one or more objects to paste.
+    \item Determine how many objects to paste.
+    \item Apply small transformations (if needed).
+    \item Paste objects and generate new labels.
+\end{enumerate}
+\noindent\rule{\linewidth}{0.4pt}
+
+\vspace{0.5em}
+\textbf{How backgrounds are chosen:}
+\begin{itemize}
+    \item Backgrounds are sampled from training images.
+    \item Images with \textbf{higher difficulty scores are preferred}.
+    \item Each background has a reuse limit to avoid repetition.
+\end{itemize}
+\noindent\textbf{Why:} \textbf{Hard backgrounds already contain challenging context}, so adding more objects creates even more valuable training samples.
+
+\vspace{0.5em}
+\noindent\rule{\linewidth}{0.4pt}
+
+\vspace{0.5em}
+\textbf{How objects are chosen:}
+\begin{itemize}
+    \item Objects are ranked using \textbf{object difficulty scores}.
+    \item Harder objects are sampled more frequently.
+    \item Objects that are too large or incompatible with the background are removed.
+    \item A fixed random seed ensures reproducibility.
+\end{itemize}
+\noindent\textbf{Why:} \textbf{Hard objects represent model weaknesses}, so repeating them improves learning efficiency.
+
+\vspace{0.5em}
+\noindent\rule{\linewidth}{0.4pt}
+
+\vspace{0.5em}
+\textbf{How many objects are pasted:}
+\begin{itemize}
+    \item Controlled by: current object density, target density, and maximum paste limit.
+    \item Sparse images are filled more, dense images are limited.
+\end{itemize}
+\noindent\textbf{Why:} \textbf{Prevents unrealistic overcrowding while enriching sparse scenes.}
+
+\vspace{0.5em}
+\noindent\rule{\linewidth}{0.4pt}
+
+\vspace{0.5em}
+\textbf{How pasting is performed:}
+\begin{itemize}
+    \item Objects may be slightly \textbf{scaled or rotated}.
+    \item Pasting is done with \texttt{blending\_method = none}.
+    \item No masks are used (bounding-box based).
+\end{itemize}
+\vspace{0.5em}
+\noindent\rule{\linewidth}{0.4pt}
+
+\vspace{1em}
+\textbf{Configuration Parameters}
+\begin{center}
+\small
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{@{}lll p{6cm}@{}}
+\toprule
+\textbf{Parameter} & \textbf{Value} & \textbf{Function} & \textbf{Reason / Design Choice} \\
+\midrule
+dataset\_ratio & MA: 0.3; GWHD: 0.3 & Number of generated images & More augmentation for smaller datasets. \\
+target\_density & 50 & Desired object density & \textbf{Balances sparsity and overcrowding}. \\
+max\_paste & MA: 20; GWHD: 25 & Maximum objects added & Prevents unrealistic scenes. \\
+use\_mask & false & Use segmentation masks & Keeps pipeline simple and efficient. \\
+blending\_method & none & Blending strategy & \textbf{Direct paste avoids instability and artifacts}. \\
+max\_bg\_reuse & 4 & Background reuse limit & Avoids repeating the same image too often. \\
+max\_obj\_reuse & 4 & Object reuse limit & Avoids overusing the same object. \\
+\bottomrule
+\end{tabular}
+}
+\end{center}
+
+\vspace{0.6em}
+\textbf{Traditional augmentation settings used in baseline training}
+\begin{center}
+\small
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Method / Parameter} & \textbf{Value} & \textbf{Usage note} \\
+\midrule
+\texttt{hsv\_h} & 0.015 & Hue jitter (small color shift). \\
+\texttt{hsv\_s} & 0.7 & Saturation jitter. \\
+\texttt{hsv\_v} & 0.4 & Brightness/value jitter. \\
+\texttt{degrees} & 10.0 & Rotation range ($\pm 10^\circ$). \\
+\texttt{translate} & 0.1 & Translation as fraction of image size. \\
+\texttt{scale} & 0.4 & Scale jitter. \\
+\texttt{shear} & 0.0 & Disabled to avoid box distortion. \\
+\texttt{perspective} & 0.0 & Disabled to avoid geometric artifacts. \\
+\texttt{fliplr} & 0.5 & Horizontal flip probability. \\
+\texttt{flipud} & 0.0 & Vertical flip disabled in current runs. \\
+\texttt{mosaic} & 0.0 & Disabled. \\
+\texttt{mixup} & 0.0 & Disabled. \\
+\texttt{copy\_paste} & 0.0 & Disabled in baseline training. \\
+\texttt{cutmix} & 0.0 & Disabled. \\
+\texttt{close\_mosaic} & 0 & Mosaic closure step disabled. \\
+\bottomrule
+\end{tabular}
+}
+\end{center}
+
+\vspace{1em}
+\subsection*{B. Experiment Blocks}
+
+\textbf{Block 1: Proving the Score is Valid}
+
+\vspace{0.5em}
+\noindent\textbf{Exp 1.1:} Score vs Miss Rate, False Positive Correlation. Target: High correlation. \\
+\hypertarget{exp11}{}
+
+\begin{center}
+\small
+\textbf{Table 1. Score vs Miss Rate Correlation}\\
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+\textbf{Case} & \textbf{n\_images} & \textbf{$w_1$} & \textbf{$w_2$} & \textbf{Pearson(score, miss\_rate)} & \textbf{Spearman(score, miss\_rate)} \\
+\midrule
+MA | w/ trad aug & 536 & 0.9000 & 0.3450 & 0.6978 & 0.6810 \\
+MA | w/o trad aug & 536 & 0.9000 & 0.9406 & 0.6788 & 0.6675 \\
+GWHD | w/ trad aug & 2700 & 0.9000 & 0.7506 & 0.8158 & 0.7519 \\
+GWHD | w/o trad aug & 2700 & 0.9000 & 0.6852 & 0.7180 & 0.6689 \\
+\bottomrule
+\end{tabular}
+}
+
+\vspace{0.8em}
+\textbf{Table 2. Score vs False Positive Rate Correlation}\\
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+\textbf{Case} & \textbf{n\_images} & \textbf{$w_1$} & \textbf{$w_2$} & \textbf{Pearson(score, fp\_rate)} & \textbf{Spearman(score, fp\_rate)} \\
+\midrule
+MA | w/ trad aug & 536 & 0.9000 & 0.3450 & 0.6883 & 0.6498 \\
+MA | w/o trad aug & 536 & 0.9000 & 0.9406 & 0.6983 & 0.6463 \\
+GWHD | w/ trad aug & 2700 & 0.9000 & 0.7506 & 0.8180 & 0.6652 \\
+GWHD | w/o trad aug & 2700 & 0.9000 & 0.6852 & 0.7157 & 0.6194 \\
+\bottomrule
+\end{tabular}
+}
+\end{center}
+
+\textbf{Interpretation:} All four cases show strong positive correlation between score and both miss rate/false-positive rate. The strongest relationship appears in GWHD with traditional augmentation.
+
+\vspace{1em}
+\noindent\textbf{Exp 1.2:} Score Stability Across Seeds. Target: Inter-seed has high correlation\\
+\hypertarget{exp12}{}
+
+\begin{center}
+\small
+\textbf{Table 3. Inter-seed Pearson Correlation}\\
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+\textbf{Case} & \textbf{n\_common\_images} & \textbf{Pearson(123,456)} & \textbf{Pearson(123,789)} & \textbf{Pearson(456,789)} & \textbf{Mean pairwise} \\
+\midrule
+MA | w/ trad aug & 536 & 0.8254 & 0.8088 & 0.7845 & 0.8062 \\
+MA | w/o trad aug & 536 & 0.6738 & 0.6652 & 0.6794 & 0.6728 \\
+GWHD | w/ trad aug & 2700 & 0.9048 & 0.8927 & 0.9029 & 0.9001 \\
+GWHD | w/o trad aug & 2700 & 0.8648 & 0.8556 & 0.8697 & 0.8634 \\
+\bottomrule
+\end{tabular}
+}
+
+\vspace{0.8em}
+\textbf{Table 4. Inter-seed Spearman Correlation}\\
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+\textbf{Case} & \textbf{n\_common\_images} & \textbf{Spearman(123,456)} & \textbf{Spearman(123,789)} & \textbf{Spearman(456,789)} & \textbf{Mean pairwise} \\
+\midrule
+MA | w/ trad aug & 536 & 0.8287 & 0.8195 & 0.8000 & 0.8161 \\
+MA | w/o trad aug & 536 & 0.6146 & 0.5833 & 0.6401 & 0.6127 \\
+GWHD | w/ trad aug & 2700 & 0.8892 & 0.8922 & 0.8790 & 0.8868 \\
+GWHD | w/o trad aug & 2700 & 0.8888 & 0.9013 & 0.8833 & 0.8911 \\
+\bottomrule
+\end{tabular}
+}
+\end{center}
+
+\textbf{Interpretation:} Three cases satisfy the stability target strongly. MA without traditional augmentation is the only unstable case.
+
+\vspace{1em}
+\noindent\textbf{Exp 1.3:} Score Domain Distribution (Global Wheat). Target: Hard domains should receive higher scores.
+\hypertarget{exp13}{}
+
+\begin{center}
+\small
+\textbf{Table 5. Domain AP \& Mean Score Ranking}\\
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{@{}lrr rrl@{}}
+\toprule
+\textbf{Domain} & \textbf{n\_images} & \textbf{AP} & \textbf{AP50} & \textbf{Mean Score} & \textbf{Difficulty Rank} \\
+\midrule
+rres\_1 & 363 & 0.5724 & 0.9617 & 0.2596 & 1 (Easiest) \\
+ethz\_1 & 592 & 0.5499 & 0.9404 & 0.2911 & 3 \\
+inrae\_1 & 146 & 0.5225 & 0.9544 & 0.2835 & 2 \\
+arvalis\_3 & 457 & 0.4664 & 0.9182 & 0.3474 & 4 \\
+usask\_1 & 153 & 0.4080 & 0.8737 & 0.3838 & 6 \\
+arvalis\_1 & 827 & 0.4026 & 0.8898 & 0.3691 & 5 \\
+arvalis\_2 & 162 & 0.3654 & 0.8130 & 0.4306 & 7 (Hardest) \\
+\bottomrule
+\end{tabular}
+}
+\end{center}
+
+\textbf{Interpretation:} Domains with lower AP have higher mean difficulty scores, proving the score captures domain-level difficulty effectively without labels.
+
+\vspace{1em}
+\noindent\textbf{Exp 1.4:} Score vs Object Size (MinneApple). Target: Smaller objects should receive higher scores.
+\hypertarget{exp14}{}
+
+\begin{center}
+\small
+\textbf{Table 6. MinneApple size-wise mean score and baseline AP}\\
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+\textbf{Size type} & \textbf{n\_objects} & \textbf{Mean score} & \textbf{Baseline AP} \\
+\midrule
+small & 16793 & 0.3777 & 0.1317 \\
+medium & 6022 & 0.2216 & 0.5224 \\
+large & 0 & N/A & 0.5796 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Interpretation:} Small objects have a higher mean difficulty score, perfectly matching the trend where baseline AP is lowest for small objects.
+
+\vspace{2em}
+\noindent\textbf{Block 2: Proving Augmentation Effectiveness}\\
+\textit{Exp 2.1:} Four-Condition Comparison on MinneApple using YOLOv8s. \\
+\hypertarget{exp21}{}
+
+\begin{center}
+\small
+\textbf{Table 7. MinneApple baseline vs copy-paste variants}\\
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{@{}lrrrrrr@{}}
+\toprule
+\textbf{Setting} & \textbf{COCO\_AP} & \textbf{COCO\_AP50} & \textbf{COCO\_AP75} & \textbf{AP\_small} & \textbf{AP\_medium} & \textbf{AP\_large} \\
+\midrule
+Initial baseline & 0.4472 & 0.7743 & 0.4637 & 0.3075 & 0.5996 & 0.7191 \\
+Random copy-paste & 0.4362 & 0.7695 & 0.4532 & 0.2903 & 0.5933 & 0.7158 \\
+Score-guided & 0.4280 & 0.7882 & 0.4288 & 0.2979 & 0.5748 & 0.6271 \\
+\bottomrule
+\end{tabular}
+}
+\end{center}
+
+\textbf{Interpretation:}
+\begin{itemize}
+    \item Both variants reduce overall AP versus the baseline.
+    \item Score-guided copy-paste is worst on overall AP and has the largest AP\_large drop.
+    \item AP50 increases, but AP75 decreases strongly, indicating lower localization precision.
+\end{itemize}
+
+\end{document}

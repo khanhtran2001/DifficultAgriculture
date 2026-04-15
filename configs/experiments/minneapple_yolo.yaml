@@ -34,21 +34,44 @@ baseline_config:
     seed: 123
 
   # Augmentation parameters disabled for plain training
+    # augmentation:
+    #   hsv_h: 0.0
+    #   hsv_s: 0.0
+    #   hsv_v: 0.0
+
+    #   # Geometric transforms disabled
+    #   degrees: 0.0
+    #   translate: 0.0
+    #   scale: 0.0
+    #   shear: 0.0
+    #   perspective: 0.0
+
+    #   # Flips disabled
+    #   fliplr: 0.0
+    #   flipud: 0.0
+
+    #   # Ultralytics augmentation controls disabled
+    #   mosaic: 0.0
+    #   mixup: 0.0
+    #   copy_paste: 0.0
+    #   cutmix: 0.0
+    #   close_mosaic: 0
+    
     augmentation:
-      hsv_h: 0.0
-      hsv_s: 0.0
-      hsv_v: 0.0
+      hsv_h: 0.015      # Image HSV-Hue augmentation (fraction)
+      hsv_s: 0.7        # Image HSV-Saturation augmentation (fraction)
+      hsv_v: 0.4        # Image HSV-Value/Brightness augmentation (fraction)
 
-      # Geometric transforms disabled
-      degrees: 0.0
-      translate: 0.0
-      scale: 0.0
-      shear: 0.0
-      perspective: 0.0
+      # Geometric (Spatial Variance - tuned to protect small bounding boxes)
+      degrees: 10.0     # Image rotation (+/- deg). Kept small to prevent bbox distortion.
+      translate: 0.1    # Image translation (+/- fraction).
+      scale: 0.4        # Image scale (+/- gain). Reduced from default 0.5 to prevent shrinking objects too much.
+      shear: 0.0        # Image shear (+/- deg). Kept at 0 as it severely distorts tight bboxes.
+      perspective: 0.0  # Image perspective (+/- fraction). Kept at 0.
 
-      # Flips disabled
-      fliplr: 0.0
-      flipud: 0.0
+      # Flips
+      fliplr: 0.5       # Image flip left-right (probability). Standard 50%.
+      flipud: 0.0       # Image flip up-down (probability). Set to 0.5 ONLY for top-down datasets like Wheat. Keep 0.0 for MinneApple.
 
       # Ultralytics augmentation controls disabled
       mosaic: 0.0
@@ -56,22 +79,6 @@ baseline_config:
       copy_paste: 0.0
       cutmix: 0.0
       close_mosaic: 0
-    
-    # augmentation:
-    #   hsv_h: 0.015      # Image HSV-Hue augmentation (fraction)
-    #   hsv_s: 0.7        # Image HSV-Saturation augmentation (fraction)
-    #   hsv_v: 0.4        # Image HSV-Value/Brightness augmentation (fraction)
-
-    #   # Geometric (Spatial Variance - tuned to protect small bounding boxes)
-    #   degrees: 10.0     # Image rotation (+/- deg). Kept small to prevent bbox distortion.
-    #   translate: 0.1    # Image translation (+/- fraction).
-    #   scale: 0.4        # Image scale (+/- gain). Reduced from default 0.5 to prevent shrinking objects too much.
-    #   shear: 0.0        # Image shear (+/- deg). Kept at 0 as it severely distorts tight bboxes.
-    #   perspective: 0.0  # Image perspective (+/- fraction). Kept at 0.
-
-    #   # Flips
-    #   fliplr: 0.5       # Image flip left-right (probability). Standard 50%.
-    #   flipud: 0.0       # Image flip up-down (probability). Set to 0.5 ONLY for top-down datasets like Wheat. Keep 0.0 for MinneApple.
 
 
   # Evaluation metrics
@@ -79,7 +86,7 @@ baseline_config:
     image_size: 1024
     confidence_threshold: 0.001 
     iou_threshold: 0.5
-    max_detections: 300 
+    max_detections: 100 
     metrics: ["mAP", "AP_50", "AP_75", "AP_small", "AP_medium", "AP_large"]
 
 
@@ -97,10 +104,10 @@ scoring_config:
 # Copy-paste augmentation configuration
 augmentation_config:
   # random_copy_paste | difficulty_based_copy_paste | same_image_score_based_copy_paste | same_image_random_copy_paste
-  mode: "same_image_score_based_copy_paste"
+  mode: "same_image_random_copy_paste"
 
   # Number of generated augmented images = int(num_train_images * dataset_ratio)
-  dataset_ratio: 2
+  dataset_ratio: 0.3
 
   # Paste policy
   # Train density stats: median~39, p75~60, p90~88
@@ -127,18 +134,18 @@ augmentation_config:
   # Object area (px) stats: p75~1056, p90~1470, p95~1748
   max_object_area_px: 10000 
   weight_scale: 3.5
-  background_weight_mode: "linear"  # linear | exponential
-  object_weight_mode: "linear" # linear | exponential
+  background_weight_mode: "exponential"  # linear | exponential
+  object_weight_mode: "exponential" # linear | exponential
   selection_seed: 123  # fixed RNG seed for deterministic background/object selection
 
   # Reuse caps (null disables cap)
-  max_background_reuse: 4
-  max_object_reuse: 4
+  max_background_reuse: 5
+  max_object_reuse: 5
 
   # Same-image copy-paste transform controls
-  same_image_scale_min: 0.75
-  same_image_scale_max: 1.25
-  same_image_rotation_deg: 15.0
+  same_image_scale_min: 0.5 
+  same_image_scale_max: 3.0
+  same_image_rotation_deg: 0
   same_image_min_transformed_area_ratio: 0.5
   same_image_max_transformed_area_ratio: 2.0
   same_image_min_transformed_side_px: 8

@@ -1,0 +1,110 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+
+\title{MinScorer Report}
+\author{DifficultyAgri}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Purpose}
+The MinScorer estimates how difficult each training image is for object detection. It measures difficulty at two levels:
+\begin{itemize}
+	\item \textbf{Object level}: how difficult each ground-truth object is to detect.
+	\item \textbf{Image level}: how difficult the full image is after aggregating object difficulty and false positives.
+\end{itemize}
+The resulting scores are used later for dataset analysis, object mining, and copy-paste augmentation.
+
+\section{Inputs}
+The scorer consumes:
+\begin{itemize}
+	\item Ground-truth labels in YOLO format.
+	\item Low-confidence predictions from the model.
+	\item Optimal-confidence predictions from the model.
+	\item A scoring configuration with parameters \(\alpha\), \(\beta\), IoU threshold, object weight, false-positive weight, and weight mode.
+\end{itemize}
+
+\section{Object Difficulty}
+For each ground-truth object, the scorer searches for predictions with the same class and IoU above the threshold. The object difficulty is defined as
+\[
+S_{obj} = \min_{p} \left[ \alpha(1-\mathrm{conf}(p)) + \beta(1-\mathrm{IoU}(g,p)) \right].
+\]
+If no valid match is found, the score defaults to the maximum penalty
+\[
+S_{obj} = \alpha + \beta.
+\]
+
+This means:
+\begin{itemize}
+	\item higher confidence lowers the score,
+	\item higher IoU lowers the score,
+	\item unmatched objects are treated as the hardest cases.
+\end{itemize}
+
+\section{Image Difficulty}
+For each image, the scorer computes the average object difficulty:
+\[
+\overline{S}_{obj} = \frac{1}{N} \sum_{i=1}^{N} S_{obj}^{(i)}.
+\]
+It also computes the false-positive rate and the missed-detection rate using the optimal-confidence predictions.
+
+The final image score is
+\[
+S_{img} = w_1 \cdot \overline{S}_{obj} + w_2 \cdot FP_{rate}.
+\]
+
+\section{How Each Parameter Is Determined}
+\subsection*{\(\alpha\)}
+User-defined. It controls how strongly low confidence increases object difficulty.
+
+\subsection*{\(\beta\)}
+User-defined. It controls how strongly poor localization increases object difficulty.
+
+\subsection*{IoU threshold}
+User-defined. A prediction is considered a valid match only if its IoU with the ground-truth object is at least this value.
+
+\subsection*{Object weight \(w_1\)}
+User-defined. It scales the contribution of average object difficulty in the image score.
+
+\subsection*{False-positive weight \(w_2\)}
+Determined by the selected \texttt{weight\_mode}:
+\begin{itemize}
+	\item \textbf{fixed}: use the configured false-positive weight directly.
+	\item \textbf{mean\_match}: set \(w_2\) so that the average false-positive contribution matches the average object-score scale.
+	\item \textbf{balance\_correlation}: search for a value of \(w_2\) that balances score correlation with false positives and missed detections.
+\end{itemize}
+
+\section{Current Configuration Values}
+The current experiment configuration uses the following values:
+
+\begin{center}
+\begin{tabular}{>{\raggedright\arraybackslash}p{0.45\linewidth} p{0.35\linewidth}}
+\toprule
+Parameter & Value \\
+\midrule
+Scorer type & \texttt{min\_scorer} \\
+\(\alpha\) & 0.5 \\
+\(\beta\) & 0.5 \\
+IoU threshold & 0.5 \\
+Object weight \(w_1\) & 0.9 \\
+False-positive weight & 0.1 \\
+Weight mode & \texttt{balance\_correlation} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Interpretation}
+\begin{itemize}
+	\item A higher object score means the object is harder to detect.
+	\item A higher image score means the image is harder overall.
+	\item The false-positive rate raises the image score even when object matches are strong.
+\end{itemize}
+
+\section{Summary}
+The MinScorer turns detector predictions into a structured difficulty score. It combines object-level matching quality and image-level false-positive behavior into a single score that can be used for ranking samples and guiding augmentation.
+
+\end{document}

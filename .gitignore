@@ -22,4 +22,5 @@ runs/
 finetuned_baseline_model/
 **.pt
 
-
+# Logs Reports
+.vscode/

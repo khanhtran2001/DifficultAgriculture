@@ -33,24 +33,47 @@ baseline_config:
     batch_size: 16
     input_size: 1024
     learning_rate: 0.01
-    early_stopping_patience: 20 
+    early_stopping_patience: 8 
     seed: 123 
 
+    # augmentation:
+    #   hsv_h: 0.0
+    #   hsv_s: 0.0
+    #   hsv_v: 0.0
+
+    #   # Geometric transforms disabled
+    #   degrees: 0.0
+    #   translate: 0.0
+    #   scale: 0.0
+    #   shear: 0.0
+    #   perspective: 0.0
+
+    #   # Flips disabled
+    #   fliplr: 0.0
+    #   flipud: 0.0
+
+    #   # Ultralytics augmentation controls disabled
+    #   mosaic: 0.0
+    #   mixup: 0.0
+    #   copy_paste: 0.0
+    #   cutmix: 0.0
+    #   close_mosaic: 0
+
     augmentation:
-      hsv_h: 0.0
-      hsv_s: 0.0
-      hsv_v: 0.0
+      hsv_h: 0.015      # Image HSV-Hue augmentation (fraction)
+      hsv_s: 0.7        # Image HSV-Saturation augmentation (fraction)
+      hsv_v: 0.4        # Image HSV-Value/Brightness augmentation (fraction)
 
-      # Geometric transforms disabled
-      degrees: 0.0
-      translate: 0.0
-      scale: 0.0
-      shear: 0.0
-      perspective: 0.0
+      # Geometric (Spatial Variance - tuned to protect small bounding boxes)
+      degrees: 10.0     # Image rotation (+/- deg). Kept small to prevent bbox distortion.
+      translate: 0.1    # Image translation (+/- fraction).
+      scale: 0.4        # Image scale (+/- gain). Reduced from default 0.5 to prevent shrinking objects too much.
+      shear: 0.0        # Image shear (+/- deg). Kept at 0 as it severely distorts tight bboxes.
+      perspective: 0.0  # Image perspective (+/- fraction). Kept at 0.
 
-      # Flips disabled
-      fliplr: 0.0
-      flipud: 0.0
+      # Flips
+      fliplr: 0.5       # Image flip left-right (probability). Standard 50%.
+      flipud: 0.0       # Image flip up-down (probability). Set to 0.5 ONLY for top-down datasets like Wheat. Keep 0.0 for MinneApple.
 
       # Ultralytics augmentation controls disabled
       mosaic: 0.0
@@ -58,9 +81,6 @@ baseline_config:
       copy_paste: 0.0
       cutmix: 0.0
       close_mosaic: 0
-
-    
-      
 
   evaluation_config:
     image_size: 1024
