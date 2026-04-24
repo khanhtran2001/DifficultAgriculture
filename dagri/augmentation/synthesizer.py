@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import random
 from pathlib import Path
+from typing import Callable
 
 import cv2
 import numpy as np
@@ -12,18 +13,12 @@ from dagri.augmentation.object_miner import BackgroundImageData, MinedObject
 class ImageSynthesizer:
 	def __init__(
 		self,
-		target_density: int = 12,
-		relative_multiplier: float = 1.0,
-		max_paste_per_image: int = 8,
-		use_mask: bool = False,
-		segmentation_masks_dir: str | None = None,
-		blending_method: str = "seamless_clone",
-		lab_gaussian_kernel_size: int = 15,
-		rng: random.Random | None = None,
+		use_mask: bool,
+		segmentation_masks_dir: str | None,
+		blending_method: str,
+		lab_gaussian_kernel_size: int,
+		rng: random.Random,
 	):
-		self.target_density = int(target_density)
-		self.relative_multiplier = float(relative_multiplier)
-		self.max_paste_per_image = int(max_paste_per_image)
 		self.use_mask = bool(use_mask)
 		self.segmentation_masks_dir = Path(segmentation_masks_dir).resolve() if segmentation_masks_dir else None
 		self.blending_method = str(blending_method).lower().strip()
@@ -38,11 +33,25 @@ class ImageSynthesizer:
 		if kernel % 2 == 0:
 			kernel += 1
 		self.lab_gaussian_kernel_size = kernel
-		self.rng = rng or random.Random()
+		self.rng = rng
 		self._source_mask_cache: dict[str, np.ndarray | None] = {}
+		self._blend_overrides: dict[
+			str,
+			Callable[[np.ndarray, np.ndarray, np.ndarray, tuple[int, int], str], tuple[np.ndarray, tuple[int, int, int, int]]],
+		] = {}
 		# Guardrails for strict Poisson mode to fail early with clear diagnostics.
 		self._min_poisson_dim_px = 8
 		self._min_poisson_mask_pixels = 16
+
+	def register_blending_method(
+		self,
+		name: str,
+		handler: Callable[[np.ndarray, np.ndarray, np.ndarray, tuple[int, int], str], tuple[np.ndarray, tuple[int, int, int, int]]],
+	) -> None:
+		self._blend_overrides[str(name).lower().strip()] = handler
+
+	def unregister_blending_method(self, name: str) -> None:
+		self._blend_overrides.pop(str(name).lower().strip(), None)
 
 	def get_mask_config_summary(self) -> str:
 		if not self.use_mask:
@@ -180,11 +189,6 @@ class ImageSynthesizer:
 		transformed_pixels, transformed_mask = self._crop_to_mask_bounds(transformed_pixels, transformed_mask)
 		return transformed_pixels, transformed_mask
 
-	def calculate_paste_count(self, current_apples: int) -> int:
-		remaining = max(self.target_density - current_apples, 0)
-		relative_limit = int(max(current_apples * self.relative_multiplier, 1))
-		return min(remaining, relative_limit, self.max_paste_per_image)
-
 	def find_placement_coordinates(
 		self,
 		bg_existing_bboxes: list[tuple[int, float, float, float, float]],
@@ -267,6 +271,10 @@ class ImageSynthesizer:
 		mask = np.where(object_mask.astype(np.uint8) > 0, 255, 0).astype(np.uint8)
 		if mask.max() == 0:
 			return bg_img, (x, y, x, y)
+
+		custom_handler = self._blend_overrides.get(self.blending_method)
+		if custom_handler is not None:
+			return custom_handler(bg_img, object_pixels, mask, top_left, debug_tag)
 
 		if self.blending_method == "seamless_clone":
 			mask_nonzero = int(np.count_nonzero(mask))
@@ -441,28 +449,53 @@ class ImageSynthesizer:
 			if object_pixels.size == 0:
 				continue
 
+			source_mask = self._load_source_mask(obj.source_image_path)
+			mask_crop = None if source_mask is None else source_mask[y1:y2, x1:x2]
 			obj_h, obj_w = object_pixels.shape[:2]
-			if obj_h <= 0 or obj_w <= 0:
+			object_mask = self._build_object_mask_from_crop(mask_crop, obj_h, obj_w)
+
+			orig_area = max(1.0, float(obj_h * obj_w))
+			transformed_pixels, transformed_mask = self.transform_object_patch(
+				object_pixels,
+				object_mask,
+				scale_factor=scale_factor,
+				rotation_deg=rotation_deg,
+			)
+
+			new_h, new_w = transformed_pixels.shape[:2]
+			if new_h <= 0 or new_w <= 0:
+				continue
+			if new_h >= image_h or new_w >= image_w:
+				continue
+			if min(new_h, new_w) < int(min_transformed_side_px):
+				continue
+			if max_transformed_side_px is not None and max(new_h, new_w) > int(max_transformed_side_px):
 				continue
 
-			# Simple check: object should fit within image
-			if obj_h >= image_h or obj_w >= image_w:
+			transformed_area = max(1.0, float(new_h * new_w))
+			area_ratio = transformed_area / orig_area
+			if area_ratio < float(min_transformed_area_ratio) or area_ratio > float(max_transformed_area_ratio):
 				continue
 
 			place_x, place_y = self.find_placement_coordinates(
 				occupied_boxes,
 				image_h,
 				image_w,
-				obj_h,
-				obj_w,
+				new_h,
+				new_w,
 			)
 
-			# Simple raw paste: copy pixels directly
-			roi = background[place_y : place_y + obj_h, place_x : place_x + obj_w]
-			if roi.shape[:2] == (obj_h, obj_w):
-				background[place_y : place_y + obj_h, place_x : place_x + obj_w] = object_pixels
+			debug_tag = f"bg={bg_image_data.image_name}|src={obj.source_image_name}|obj={obj.object_index}"
+			background, bbox_xyxy = self.blend_and_paste(
+				background,
+				transformed_pixels,
+				transformed_mask,
+				(place_x, place_y),
+				debug_tag=debug_tag,
+			)
+			if bbox_xyxy[2] <= bbox_xyxy[0] or bbox_xyxy[3] <= bbox_xyxy[1]:
+				continue
 
-			bbox_xyxy = (place_x, place_y, place_x + obj_w, place_y + obj_h)
 			yolo_box = self._xyxy_to_yolo(*bbox_xyxy, image_w=image_w, image_h=image_h)
 			new_boxes.append((class_id, *yolo_box))
 			occupied_boxes.append((class_id, *yolo_box))

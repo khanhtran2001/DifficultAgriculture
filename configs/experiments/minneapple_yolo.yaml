@@ -26,52 +26,29 @@ baseline_config:
   
   # Training parameters
   training_config:
-    epochs: 100 
+    epochs: 200 
     batch_size: 16
     input_size: 1024
     learning_rate: 0.01
-    early_stopping_patience: 20 
+    early_stopping_patience: 20
     seed: 123
 
   # Augmentation parameters disabled for plain training
-    # augmentation:
-    #   hsv_h: 0.0
-    #   hsv_s: 0.0
-    #   hsv_v: 0.0
-
-    #   # Geometric transforms disabled
-    #   degrees: 0.0
-    #   translate: 0.0
-    #   scale: 0.0
-    #   shear: 0.0
-    #   perspective: 0.0
-
-    #   # Flips disabled
-    #   fliplr: 0.0
-    #   flipud: 0.0
-
-    #   # Ultralytics augmentation controls disabled
-    #   mosaic: 0.0
-    #   mixup: 0.0
-    #   copy_paste: 0.0
-    #   cutmix: 0.0
-    #   close_mosaic: 0
-    
     augmentation:
-      hsv_h: 0.015      # Image HSV-Hue augmentation (fraction)
-      hsv_s: 0.7        # Image HSV-Saturation augmentation (fraction)
-      hsv_v: 0.4        # Image HSV-Value/Brightness augmentation (fraction)
+      hsv_h: 0.0
+      hsv_s: 0.0
+      hsv_v: 0.0
 
-      # Geometric (Spatial Variance - tuned to protect small bounding boxes)
-      degrees: 10.0     # Image rotation (+/- deg). Kept small to prevent bbox distortion.
-      translate: 0.1    # Image translation (+/- fraction).
-      scale: 0.4        # Image scale (+/- gain). Reduced from default 0.5 to prevent shrinking objects too much.
-      shear: 0.0        # Image shear (+/- deg). Kept at 0 as it severely distorts tight bboxes.
-      perspective: 0.0  # Image perspective (+/- fraction). Kept at 0.
+      # Geometric transforms disabled
+      degrees: 0.0
+      translate: 0.0
+      scale: 0.0
+      shear: 0.0
+      perspective: 0.0
 
-      # Flips
-      fliplr: 0.5       # Image flip left-right (probability). Standard 50%.
-      flipud: 0.0       # Image flip up-down (probability). Set to 0.5 ONLY for top-down datasets like Wheat. Keep 0.0 for MinneApple.
+      # Flips disabled
+      fliplr: 0.0
+      flipud: 0.0
 
       # Ultralytics augmentation controls disabled
       mosaic: 0.0
@@ -79,6 +56,29 @@ baseline_config:
       copy_paste: 0.0
       cutmix: 0.0
       close_mosaic: 0
+    
+    # augmentation:
+    #   hsv_h: 0.015      # Image HSV-Hue augmentation (fraction)
+    #   hsv_s: 0.7        # Image HSV-Saturation augmentation (fraction)
+    #   hsv_v: 0.4        # Image HSV-Value/Brightness augmentation (fraction)
+
+    #   # Geometric (Spatial Variance - tuned to protect small bounding boxes)
+    #   degrees: 10.0     # Image rotation (+/- deg). Kept small to prevent bbox distortion.
+    #   translate: 0.1    # Image translation (+/- fraction).
+    #   scale: 0.4        # Image scale (+/- gain). Reduced from default 0.5 to prevent shrinking objects too much.
+    #   shear: 0.0        # Image shear (+/- deg). Kept at 0 as it severely distorts tight bboxes.
+    #   perspective: 0.0  # Image perspective (+/- fraction). Kept at 0.
+
+    #   # Flips
+    #   fliplr: 0.5       # Image flip left-right (probability). Standard 50%.
+    #   flipud: 0.0       # Image flip up-down (probability). Set to 0.5 ONLY for top-down datasets like Wheat. Keep 0.0 for MinneApple.
+
+    #   # Ultralytics augmentation controls disabled
+    #   mosaic: 0.0
+    #   mixup: 0.0
+    #   copy_paste: 0.0
+    #   cutmix: 0.0
+    #   close_mosaic: 0
 
 
   # Evaluation metrics
@@ -103,50 +103,39 @@ scoring_config:
 
 # Copy-paste augmentation configuration
 augmentation_config:
-  # random_copy_paste | difficulty_based_copy_paste | same_image_score_based_copy_paste | same_image_random_copy_paste
-  mode: "same_image_random_copy_paste"
+  # Selection mode
+  use_score_guidance: true
+  reverse_score_guidance: false
+  same_image_only: true
+  score_weight_function: linear
+  score_alpha: 2.0
 
-  # Number of generated augmented images = int(num_train_images * dataset_ratio)
-  dataset_ratio: 0.3
+  # How much augmentation to generate
+  dataset_ratio: 0.5
+  min_objects_per_image: 2
+  max_objects_per_image: 8
 
-  # Paste policy
-  # Train density stats: median~39, p75~60, p90~88
-  # Use p75-like target to increase objects on sparse scenes only.
-  target_density: 50 
-  paste_relative_multiplier: 1.0
-  max_paste_objects_per_image: 20
-
-  # Mask-based blending
-  use_mask: false 
-  segmentation_masks_dir: "/home/khanh/Projects/DifficultyAgri/datasets/minneapple/raw/MinneAppleDetection/detection/train/masks" 
-  blending_method: "none"    # seamless_clone | alpha | none | lab_gaussian
-  lab_gaussian_kernel_size: 15
-
-  # Visual-domain clustering
+  # Source data discovery and reproducibility
   image_extensions: [".jpg", ".jpeg", ".png", ".bmp", ".webp"]
-  auto_k: true
-  max_k: 8
+  selection_seed: 123
 
-  # Score-targeted mining and sampling controls
-  # Object score stats: p95~0.677, p99~1.0
-  top_object_fraction: 1
-  object_noise_cap: 10 
-  # Object area (px) stats: p75~1056, p90~1470, p95~1748
-  max_object_area_px: 10000 
-  weight_scale: 3.5
-  background_weight_mode: "exponential"  # linear | exponential
-  object_weight_mode: "exponential" # linear | exponential
-  selection_seed: 123  # fixed RNG seed for deterministic background/object selection
+  # Reuse limits
+  max_image_reuse: 1
+  max_object_reuse: 1
+  min_object_area_px: 500
 
-  # Reuse caps (null disables cap)
-  max_background_reuse: 5
-  max_object_reuse: 5
+  # Object transform
+  scale_min: 0.8
+  scale_max: 1.2
+  rotation_deg_max: 180
 
-  # Same-image copy-paste transform controls
-  same_image_scale_min: 0.5 
-  same_image_scale_max: 3.0
-  same_image_rotation_deg: 0
-  same_image_min_transformed_area_ratio: 0.5
-  same_image_max_transformed_area_ratio: 2.0
-  same_image_min_transformed_side_px: 8
-  same_image_max_transformed_side_px: null
+  # Blending (implemented in ImageSynthesizer)
+  blending_method: none  # seamless_clone | alpha | none | lab_gaussian
+  lab_gaussian_kernel_size: 5     # used when blending_method=lab_gaussian
+
+  # Placement control
+  avoid_overlap: true
+  placement_control: true
+  placement_margin_px: 5
+  random_placement_attempts: 12
+  use_jiggle_placement: true

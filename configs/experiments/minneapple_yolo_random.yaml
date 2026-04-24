@@ -1,41 +1,36 @@
-# Global Wheat Head YOLO pipeline configuration
-#
-# Dataset expected layout:
-#   root_dir/
-#     train/images, train/labels
-#     val/images,   val/labels
-#     test/images,  test/labels (optional but recommended)
-
-
 # General configuration
 general:
-  random_seed: [123, 456, 789]
+  random_seed: [123, 456, 789]  # List of random seeds for reproducibility
 
 
 # Dataset configuration
 dataset_config:
-  name: global_wheat_head
+  name: minneapple
   type: "yolo_detection"
-  root_dir: /home/khanh/Projects/DifficultyAgri/datasets/global_wheat_head/yolo_format/global_wheat_head_yolo
-  train_mask_dir: null
+  root_dir: /home/khanh/Projects/DifficultyAgri/datasets/minneapple/yolo_format/minneapple_yolo 
+  train_mask_dir: /home/khanh/Projects/DifficultyAgri/datasets/minneapple/raw/MinneAppleDetection/test_data/detection/images
   num_classes: 1
-  class_names: ["wheat_head"]
+  class_names: ["apple"]
 
 
 # Model configuration
 baseline_config:
+
+  # Model overview and structure
   name: yolov8s
   model_type: "yolo"
-  pretrained_weights_path: "/home/khanh/Projects/DifficultyAgri/finetuned_baseline_model/yolov8s.pt"
-
+  pretrained_weights_path: "/home/khanh/Projects/DifficultyAgri/finetuned_baseline_model/yolov8s.pt" 
+  
+  # Training parameters
   training_config:
-    epochs: 100
+    epochs: 100 
     batch_size: 16
     input_size: 1024
     learning_rate: 0.01
-    early_stopping_patience: 8
-    seed: 123 
+    early_stopping_patience: 10
+    seed: 123
 
+  # Augmentation parameters disabled for plain training
     augmentation:
       hsv_h: 0.0
       hsv_s: 0.0
@@ -58,35 +53,13 @@ baseline_config:
       copy_paste: 0.0
       cutmix: 0.0
       close_mosaic: 0
-
-    # augmentation:
-    #   hsv_h: 0.015      # Image HSV-Hue augmentation (fraction)
-    #   hsv_s: 0.7        # Image HSV-Saturation augmentation (fraction)
-    #   hsv_v: 0.4        # Image HSV-Value/Brightness augmentation (fraction)
-
-    #   # Geometric (Spatial Variance - tuned to protect small bounding boxes)
-    #   degrees: 10.0     # Image rotation (+/- deg). Kept small to prevent bbox distortion.
-    #   translate: 0.1    # Image translation (+/- fraction).
-    #   scale: 0.4        # Image scale (+/- gain). Reduced from default 0.5 to prevent shrinking objects too much.
-    #   shear: 0.0        # Image shear (+/- deg). Kept at 0 as it severely distorts tight bboxes.
-    #   perspective: 0.0  # Image perspective (+/- fraction). Kept at 0.
-
-    #   # Flips
-    #   fliplr: 0.5       # Image flip left-right (probability). Standard 50%.
-    #   flipud: 0.0       # Image flip up-down (probability). Set to 0.5 ONLY for top-down datasets like Wheat. Keep 0.0 for MinneApple.
-
-    #   # Ultralytics augmentation controls disabled
-    #   mosaic: 0.0
-    #   mixup: 0.0
-    #   copy_paste: 0.0
-    #   cutmix: 0.0
-    #   close_mosaic: 0
-
+    
+  # Evaluation metrics
   evaluation_config:
     image_size: 1024
-    confidence_threshold: 0.001
+    confidence_threshold: 0.001 
     iou_threshold: 0.5
-    max_detections: 600
+    max_detections: 100 
     metrics: ["mAP", "AP_50", "AP_75", "AP_small", "AP_medium", "AP_large"]
 
 
@@ -104,10 +77,7 @@ scoring_config:
 # Copy-paste augmentation configuration (simplified)
 augmentation_config:
   # Use score-guided selection (set to false for random selection)
-  use_score_guidance: true 
-
-  # If true, lower-score objects/images are selected more often instead of higher-score ones
-  reverse_score_guidance: false
+  use_score_guidance: false 
 
   # If true, pasted objects are selected only from the same background image.
   # If false, pasted objects are selected from the whole training pool.
@@ -116,13 +86,13 @@ augmentation_config:
   # Score weighting for score-guided selection: linear | exponential
   # alpha controls how strongly high-score samples are preferred.
   score_weight_function: linear 
-  score_alpha: 1
+  score_alpha: 3.0
   
   # Number of generated augmented images = int(num_train_images * dataset_ratio)
   dataset_ratio: 0.5
   
   # Number of objects to paste per augmented image (uniform random in [min, max])
-  min_objects_per_image: 2
+  min_objects_per_image: 2 
   max_objects_per_image: 8
   
   # Image extensions to discover
@@ -137,7 +107,7 @@ augmentation_config:
 
   # Minimum source object area (in pixel^2) to be eligible for copy-paste.
   # Example: 32x32 => 1024. Objects smaller than this are excluded from the pool.
-  min_object_area_px: 500 
+  min_object_area_px: 500
   
   # Transform parameters
   scale_min: 0.8

@@ -50,7 +50,7 @@ outputs/
 # The parent result dir is in the folder results/exp_name
 
 RESULTS_DIR = Path(f"results/{Path(__file__).stem}")
-CONFIG_DIR = Path("/home/khanh/Projects/DifficultyAgri/configs/experiments/minneapple_yolo.yaml")
+CONFIG_DIR = Path("/home/khanh/Projects/DifficultyAgri/configs/experiments/global_wheat_head_yolo.yaml")
 
 
 def _metric_stats(values: list[float]) -> dict:

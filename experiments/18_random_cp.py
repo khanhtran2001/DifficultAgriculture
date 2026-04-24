@@ -48,7 +48,7 @@ outputs/
 
 RESULTS_DIR = Path(f"results/{Path(__file__).stem}")
 # CONFIG_DIR = Path("/home/khanh/Projects/DifficultyAgri/configs/experiments/global_wheat_head_yolo.yaml")
-CONFIG_DIR = Path("/home/khanh/Projects/DifficultyAgri/configs/experiments/minneapple_yolo.yaml")
+CONFIG_DIR = Path("/home/khanh/Projects/DifficultyAgri/configs/experiments/minneapple_yolo_random.yaml")
 
 
 
@@ -95,7 +95,7 @@ def run_experiment(config_path: str):
     max_det = compute_max_det_from_train_labels(
         train_labels_dir=initial_dataset_properties.train_labels_dir,
         percentile=0.99,
-        multiplier=3,
+        multiplier=5,
     )
     print(f"Auto max_det from p99 object count x3: {max_det}")
     image_dir = "/home/khanh/Projects/DifficultyAgri/datasets/minneapple/yolo_format/minneapple_yolo/train/images"

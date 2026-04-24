@@ -3,6 +3,7 @@ import json
 import shutil
 import yaml
 import tempfile
+from functools import partial
 from pathlib import Path
 import numpy as np
 
@@ -12,6 +13,7 @@ from pycocotools.cocoeval import COCOeval
 
 from dagri.interfaces import BaselineConfig, DatasetProperties, EvaluationResults, PredictionResult, BoundingBox
 from dagri.baseline.utils import create_coco_gt_json_from_yolo
+from dagri.weighting import WeightedDetectionTrainer
 
 
 class YoloUltralyticsModel:
@@ -25,7 +27,15 @@ class YoloUltralyticsModel:
         # Initialize model
         self.model = YOLO(baseline_config.pretrained_weights_path)
     
-    def custom_train(self, dataset_properties: DatasetProperties, output_dir_for_best_weights: str) -> str:
+    def custom_train(
+        self,
+        dataset_properties: DatasetProperties,
+        output_dir_for_best_weights: str,
+        image_score_map: dict[str, float] | None = None,
+        weight_function: str = "linear",
+        weight_gamma: float = 1.0,
+        normalize_scores: bool = True,
+    ) -> str:
         """
         Train YOLO model and save best weights to output directory.
         
@@ -66,9 +76,24 @@ class YoloUltralyticsModel:
         aug_cfg = self.train_config.traditional_augmentation_config or {}
         if isinstance(aug_cfg, dict):
             train_kwargs.update(aug_cfg)
-       
-        
-        self.model.train(**train_kwargs)
+
+        trainer_factory = None
+        if image_score_map:
+            trainer_factory = partial(
+                WeightedDetectionTrainer,
+                weighted_config={
+                    "enabled": True,
+                    "image_score_map": image_score_map,
+                    "weight_function": weight_function,
+                    "weight_gamma": weight_gamma,
+                    "normalize_scores": normalize_scores,
+                },
+            )
+
+        if trainer_factory is None:
+            self.model.train(**train_kwargs)
+        else:
+            self.model.train(trainer=trainer_factory, **train_kwargs)
 
         trainer_best = getattr(getattr(self.model, "trainer", None), "best", None)
         weight_src = str(trainer_best) if trainer_best else ""

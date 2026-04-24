@@ -1,77 +1,53 @@
 from __future__ import annotations
 
+import json
 import shutil
 import sys
 import random
 from pathlib import Path
 from typing import Any
+from dataclasses import dataclass
 
 import cv2
+import numpy as np
 
-from dagri.augmentation.domain_cluster import DomainClusterer
-from dagri.augmentation.object_miner import ObjectMiner
 from dagri.augmentation.synthesizer import ImageSynthesizer
 from dagri.interfaces import AugmentorInterface, DatasetProperties, ScoringResults
 
 
+def boxes_overlap(box1: tuple[float, float, float, float], box2: tuple[float, float, float, float]) -> bool:
+    """Check if two bounding boxes overlap. Boxes are in (x1, y1, x2, y2) pixel format."""
+    x1_1, y1_1, x2_1, y2_1 = box1
+    x1_2, y1_2, x2_2, y2_2 = box2
+    return not (x2_1 <= x1_2 or x2_2 <= x1_1 or y2_1 <= y1_2 or y2_2 <= y1_1)
+
+
+@dataclass
+class ImageData:
+    """Simple image metadata"""
+    name: str
+    path: Path
+    boxes: list[tuple[int, float, float, float, float]]
+    score: float = 0.0
+
+
+@dataclass
+class ObjectData:
+    """Simple object metadata"""
+    image_name: str
+    image_path: Path
+    object_index: int
+    bbox: tuple[int, float, float, float, float]
+    score: float = 0.0
+
+
+
+
 class CopyPasteAugmentor(AugmentorInterface):
+    """Simple copy-paste augmentor with random/score-guided selection and reuse caps"""
+
     def __init__(self, config: dict[str, Any] | None):
         self.config = dict(config or {})
-
-    @staticmethod
-    def _parse_optional_positive_int(value: Any) -> int | None:
-        if value in (None, "null"):
-            return None
-        parsed = int(value)
-        return parsed if parsed > 0 else None
-
-    @staticmethod
-    def _object_reuse_key(image_name: str, object_index: int) -> str:
-        return f"{image_name}:{int(object_index)}"
-
-    def _select_background_with_reuse_cap(
-        self,
-        miner: ObjectMiner,
-        background_reuse_counts: dict[str, int],
-        max_background_reuse: int | None,
-        excluded_names: set[str] | None = None,
-    ):
-        excluded_names = excluded_names or set()
-        eligible_backgrounds = [
-            bg
-            for bg in miner.background_pool
-            if bg.image_name not in excluded_names
-            and (
-                max_background_reuse is None
-                or background_reuse_counts.get(bg.image_name, 0) < max_background_reuse
-            )
-        ]
-        if not eligible_backgrounds:
-            return None
-
-        if miner.scoring_mode == "random":
-            return miner.rng.choice(eligible_backgrounds)
-
-        weights = miner._build_weights(
-            [bg.simg_score for bg in eligible_backgrounds],
-            miner.background_weight_mode,
-        )
-        return miner.rng.choices(eligible_backgrounds, weights=weights, k=1)[0]
-
-    def _apply_object_reuse_cap(
-        self,
-        compatible_objects,
-        object_reuse_counts: dict[str, int],
-        max_object_reuse: int | None,
-    ):
-        if max_object_reuse is None:
-            return compatible_objects
-        return [
-            obj
-            for obj in compatible_objects
-            if object_reuse_counts.get(self._object_reuse_key(obj.source_image_name, obj.object_index), 0)
-            < max_object_reuse
-        ]
 
     def create_new_dataset(
         self,
@@ -79,207 +55,208 @@ class CopyPasteAugmentor(AugmentorInterface):
         scoring_results: ScoringResults,
         new_dataset_path: str,
     ) -> DatasetProperties:
+        """Create augmented dataset with copy-paste augmentation"""
         train_images_dir = initial_dataset_properties.train_images_dir
         train_labels_dir = initial_dataset_properties.train_labels_dir
         if not train_images_dir or not train_labels_dir:
             raise ValueError("initial_dataset_properties must include train_images_dir and train_labels_dir")
 
+        # Setup output directories
         output_root = Path(new_dataset_path).resolve()
         train_img_out = output_root / "train" / "images"
         train_lbl_out = output_root / "train" / "labels"
+        train_meta_out = output_root / "train" / "metadata"
         train_img_out.mkdir(parents=True, exist_ok=True)
         train_lbl_out.mkdir(parents=True, exist_ok=True)
+        train_meta_out.mkdir(parents=True, exist_ok=True)
 
-        removed_images, removed_labels = self._remove_previous_augmented_outputs(train_img_out, train_lbl_out)
-        if removed_images or removed_labels:
+        # Clean previous augmented outputs
+        removed_images, removed_labels, removed_metadata = self._remove_previous_augmented_outputs(
+            train_img_out,
+            train_lbl_out,
+            train_meta_out,
+        )
+        if removed_images or removed_labels or removed_metadata:
             print(
-                "[Augmentor] Cleaned previous synthetic outputs: "
-                f"images={removed_images}, labels={removed_labels}"
+                f"[Augmentor] Cleaned previous outputs: images={removed_images}, labels={removed_labels}, metadata={removed_metadata}"
             )
 
-        self._copy_original_train_split(Path(train_images_dir), Path(train_labels_dir), train_img_out, train_lbl_out)
+        # Copy original training split
+        self._copy_original_train_split(
+            Path(train_images_dir), Path(train_labels_dir), train_img_out, train_lbl_out
+        )
 
-        mode = str(self.config.get("mode", "difficulty_based_copy_paste")).lower()
-        same_image_only = mode in {"same_image_score_based_copy_paste", "same_image_random_copy_paste"}
-        scoring_mode = "random" if mode in {"random_copy_paste", "same_image_random_copy_paste"} else "score_targeted"
+        # Parse config
+        use_score = self.config.get("use_score_guidance")
+        reverse_score_guidance = bool(self.config.get("reverse_score_guidance"))
+        dataset_ratio = float(self.config.get("dataset_ratio"))
+        min_objects_per_image = int(self.config.get("min_objects_per_image", 1))
+        max_objects_per_image = int(self.config.get("max_objects_per_image", self.config.get("num_objects_per_image", 3)))
+        score_weight_function = str(self.config.get("score_weight_function", "linear")).strip().lower()
+        score_alpha = float(self.config.get("score_alpha", 1.0))
+        same_image_only = bool(self.config.get("same_image_only"))
+        max_image_reuse = self._normalize_reuse_cap(self.config.get("max_image_reuse"))
+        max_object_reuse = self._normalize_reuse_cap(self.config.get("max_object_reuse"))
+        scale_min = float(self.config.get("scale_min"))
+        scale_max = float(self.config.get("scale_max"))
+        rotation_deg_max = float(self.config.get("rotation_deg_max"))
+        min_object_area_px = float(self.config.get("min_object_area_px"))
+        blending_method = str(self.config.get("blending_method", "none")).strip().lower()
+        lab_gaussian_kernel_size = int(self.config.get("lab_gaussian_kernel_size", 5))
+        avoid_overlap = bool(self.config.get("avoid_overlap"))
+        placement_control = bool(self.config.get("placement_control"))
+        placement_margin_px = int(self.config.get("placement_margin_px"))
+        random_placement_attempts = int(self.config.get("random_placement_attempts"))
+        use_jiggle_placement = bool(self.config.get("use_jiggle_placement"))
+        image_extensions = self.config.get("image_extensions", [".jpg", ".jpeg", ".png"])
+        selection_seed = self.config.get("selection_seed")
 
-        dataset_ratio = float(self.config.get("dataset_ratio", self.config.get("relative_multiplier", 0.3)))
-        target_density = int(self.config.get("target_density", 12))
-        relative_multiplier = float(self.config.get("paste_relative_multiplier", 1.0))
-        max_paste_per_image = int(self.config.get("max_paste_objects_per_image", 8))
-        use_mask = bool(self.config.get("use_mask", False))
-        masks_dir = self.config.get("segmentation_masks_dir")
-        if "blending_method" not in self.config:
-            raise ValueError(
-                "augmentation_config.blending_method is required. "
-                "Use 'seamless_clone', 'alpha', 'none', or 'lab_gaussian'."
+        rng = random.Random(int(selection_seed)) if selection_seed not in (None, "null") else random.Random()
+
+        # Load images and objects
+        images = self._load_images(
+            Path(train_images_dir),
+            Path(train_labels_dir),
+            image_extensions,
+            scoring_results if use_score else None,
+        )
+        objects = self._load_objects(
+            images,
+            scoring_results if use_score else None,
+            min_object_area_px=min_object_area_px,
+        )
+
+        if not images or not objects:
+            raise RuntimeError(f"No images ({len(images)}) or objects ({len(objects)}) found for augmentation")
+
+        print(f"[Augmentor] Loaded {len(images)} images and {len(objects)} objects")
+        if use_score:
+            print(f"[Augmentor] Using score-guided selection")
+        print(
+            f"[Augmentor] Config: dataset_ratio={dataset_ratio}, "
+            f"min_objects={min_objects_per_image}, max_objects={max_objects_per_image}"
+        )
+        if use_score:
+            reverse_str = " (REVERSED)" if reverse_score_guidance else ""
+            print(
+                f"[Augmentor] Score weighting: function={score_weight_function}, alpha={score_alpha}{reverse_str}"
             )
-        blending_method = str(self.config["blending_method"]).lower().strip()
-        lab_gaussian_kernel_size = int(self.config.get("lab_gaussian_kernel_size", 15))
-
-        image_extensions = self.config.get("image_extensions", [".jpg", ".jpeg", ".png", ".bmp", ".webp"])
-        auto_k = bool(self.config.get("auto_k", True))
-        max_k = int(self.config.get("max_k", 8))
-
-        top_object_fraction = float(self.config.get("top_object_fraction", 0.3))
-        object_noise_cap = float(self.config.get("object_noise_cap", 100.0))
-        weight_scale = float(self.config.get("weight_scale", 3.0))
-        background_weight_mode = str(self.config.get("background_weight_mode", "linear")).lower()
-        object_weight_mode = str(self.config.get("object_weight_mode", "linear")).lower()
-        max_object_area_px = float(self.config.get("max_object_area_px", 1024.0))
-        selection_seed_raw = self.config.get("selection_seed", None)
-        selection_rng = random.Random(int(selection_seed_raw)) if selection_seed_raw is not None else random.Random()
-        same_image_scale_min = float(self.config.get("same_image_scale_min", 0.75))
-        same_image_scale_max = float(self.config.get("same_image_scale_max", 1.25))
-        same_image_rotation_deg = float(self.config.get("same_image_rotation_deg", 15.0))
-        same_image_min_transformed_area_ratio = float(self.config.get("same_image_min_transformed_area_ratio", 0.5))
-        same_image_max_transformed_area_ratio = float(self.config.get("same_image_max_transformed_area_ratio", 2.0))
-        same_image_min_transformed_side_px = int(self.config.get("same_image_min_transformed_side_px", 8))
-        same_image_max_transformed_side_px_raw = self.config.get("same_image_max_transformed_side_px", None)
-        same_image_max_transformed_side_px = (
-            None
-            if same_image_max_transformed_side_px_raw in (None, "null")
-            else int(same_image_max_transformed_side_px_raw)
-        )
-        max_background_reuse = self._parse_optional_positive_int(self.config.get("max_background_reuse", None))
-        max_object_reuse = self._parse_optional_positive_int(self.config.get("max_object_reuse", None))
-        if same_image_scale_min > same_image_scale_max:
-            same_image_scale_min, same_image_scale_max = same_image_scale_max, same_image_scale_min
-        same_image_scale_min = max(0.05, same_image_scale_min)
-        same_image_scale_max = max(same_image_scale_min, same_image_scale_max)
-        same_image_rotation_deg = max(0.0, same_image_rotation_deg)
-        same_image_min_transformed_area_ratio = max(0.01, same_image_min_transformed_area_ratio)
-        same_image_max_transformed_area_ratio = max(
-            same_image_min_transformed_area_ratio,
-            same_image_max_transformed_area_ratio,
-        )
-        same_image_min_transformed_side_px = max(1, same_image_min_transformed_side_px)
-        if same_image_max_transformed_side_px is not None:
-            same_image_max_transformed_side_px = max(
-                same_image_min_transformed_side_px,
-                same_image_max_transformed_side_px,
-            )
-
-        clusterer = DomainClusterer(train_images_dir, image_extensions=image_extensions)
-        domain_map = clusterer.extract_visual_domains(auto_k=auto_k, max_k=max_k)
-
-        miner = ObjectMiner(
-            images_dir=train_images_dir,
-            labels_dir=train_labels_dir,
-            scoring_results=scoring_results,
-            scoring_mode=scoring_mode,
-            top_object_fraction=top_object_fraction,
-            object_noise_cap=object_noise_cap,
-            background_weight_mode=background_weight_mode,
-            object_weight_mode=object_weight_mode,
-            weight_scale=weight_scale,
-            max_object_area_px=max_object_area_px,
-            image_extensions=image_extensions,
-            rng=selection_rng,
-        )
-        miner.load_data(domain_map=domain_map)
-        if miner.total_images == 0:
-            raise RuntimeError("No train images found for augmentation")
+        if min_object_area_px > 0:
+            print(f"[Augmentor] Min object area filter: {min_object_area_px:.1f} px^2")
+        print(f"[Augmentor] Object source mode: {'same-image-only' if same_image_only else 'whole-pool'}")
+        if max_image_reuse:
+            print(f"[Augmentor] Max image reuse: {max_image_reuse}")
+        if max_object_reuse:
+            print(f"[Augmentor] Max object reuse: {max_object_reuse}")
+        print(f"[Augmentor] Blending method: {blending_method}")
 
         synthesizer = ImageSynthesizer(
-            target_density=target_density,
-            relative_multiplier=relative_multiplier,
-            max_paste_per_image=max_paste_per_image,
-            use_mask=use_mask,
-            segmentation_masks_dir=masks_dir,
+            use_mask=False,
+            segmentation_masks_dir=None,
             blending_method=blending_method,
             lab_gaussian_kernel_size=lab_gaussian_kernel_size,
-            rng=selection_rng,
+            rng=rng,
         )
 
-        print(f"[Augmentor] {synthesizer.get_mask_config_summary()}")
-        print(f"[Augmentor] Blending method: {blending_method}")
-        if selection_seed_raw is not None:
-            print(f"[Augmentor] Selection seed: {int(selection_seed_raw)}")
-        if blending_method == "lab_gaussian":
-            print(f"[Augmentor] LAB Gaussian effective kernel size: {synthesizer.lab_gaussian_kernel_size}")
-
-        num_to_generate = max(1, int(miner.total_images * dataset_ratio))
-        background_reuse_counts: dict[str, int] = {}
+        # Generate augmented images
+        num_to_generate = max(1, int(len(images) * dataset_ratio))
+        image_reuse_counts: dict[str, int] = {}
         object_reuse_counts: dict[str, int] = {}
         generated_count = 0
-        print(f"[Augmentor] Generating {num_to_generate} new images...")
+
+        print(f"[Augmentor] Generating {num_to_generate} augmented images...")
+
         for i in range(num_to_generate):
-            bg = None
-            objects_to_copy = []
-            max_background_pick_attempts = max(10, min(200, len(miner.background_pool) * 2))
-            attempted_backgrounds: set[str] = set()
-
-            for _ in range(max_background_pick_attempts):
-                bg_candidate = self._select_background_with_reuse_cap(
-                    miner,
-                    background_reuse_counts,
-                    max_background_reuse,
-                    excluded_names=attempted_backgrounds,
-                )
-                if bg_candidate is None:
-                    break
-
-                attempted_backgrounds.add(bg_candidate.image_name)
-                paste_count = synthesizer.calculate_paste_count(len(bg_candidate.existing_boxes))
-                if paste_count <= 0:
-                    continue
-
-                compatible = miner.get_compatible_objects_for_background(
-                    bg_candidate,
-                    same_image_only=same_image_only,
-                )
-                compatible = self._apply_object_reuse_cap(
-                    compatible,
-                    object_reuse_counts,
-                    max_object_reuse,
-                )
-                candidate_objects = miner.select_objects_to_copy(compatible, paste_count)
-                if not candidate_objects:
-                    continue
-
-                bg = bg_candidate
-                objects_to_copy = candidate_objects
+            # Select background image
+            bg_image = self._select_image(
+                images,
+                image_reuse_counts,
+                max_image_reuse,
+                use_score,
+                score_weight_function,
+                score_alpha,
+                reverse_score_guidance,
+                rng,
+            )
+            if bg_image is None:
+                print("\n[Augmentor] Stopped: no eligible background images left under reuse caps")
                 break
 
-            if bg is None:
-                print("\n[Augmentor] Stopped early: no eligible background/object candidates left under reuse caps.")
-                break
+            # Select objects to copy
+            low = max(1, min(min_objects_per_image, max_objects_per_image))
+            high = max(1, max(min_objects_per_image, max_objects_per_image))
+            num_objects = rng.randint(low, high)
 
-            scale_factor = 1.0
-            rotation_deg = 0.0
-            if same_image_only and objects_to_copy:
-                scale_factor = selection_rng.uniform(same_image_scale_min, same_image_scale_max)
-                rotation_deg = selection_rng.uniform(-same_image_rotation_deg, same_image_rotation_deg)
+            object_pool = objects
+            if same_image_only:
+                object_pool = [obj for obj in objects if obj.image_name == bg_image.name]
 
-            aug_image, new_boxes = synthesizer.execute_paste(
-                bg,
-                objects_to_copy,
-                scale_factor=scale_factor,
-                rotation_deg=rotation_deg,
-                min_transformed_area_ratio=same_image_min_transformed_area_ratio,
-                max_transformed_area_ratio=same_image_max_transformed_area_ratio,
-                min_transformed_side_px=same_image_min_transformed_side_px,
-                max_transformed_side_px=same_image_max_transformed_side_px,
+            selected_objects = self._select_objects(
+                object_pool,
+                object_reuse_counts,
+                max_object_reuse,
+                num_objects,
+                use_score,
+                score_weight_function,
+                score_alpha,
+                reverse_score_guidance,
+                rng,
+            )
+            if not selected_objects:
+                continue
+
+            # Apply random transform
+            scale_factor = rng.uniform(scale_min, scale_max)
+            rotation_deg = rng.uniform(-rotation_deg_max, rotation_deg_max)
+
+            # Paste objects onto background
+            aug_image, new_boxes = self._paste_objects(
+                bg_image,
+                selected_objects,
+                scale_factor,
+                rotation_deg,
+                synthesizer,
+                avoid_overlap,
+                placement_margin_px,
+                random_placement_attempts,
+                use_jiggle_placement,
+                placement_control,
+                rng,
             )
 
-            out_stem = f"aug_{i + 1:04d}_{bg.image_path.stem}"
+            # Save augmented image
+            out_stem = f"aug_{i + 1:04d}_{bg_image.path.stem}"
             out_img_path = train_img_out / f"{out_stem}.jpg"
             out_lbl_path = train_lbl_out / f"{out_stem}.txt"
 
             cv2.imwrite(str(out_img_path), aug_image)
-            merged_boxes = list(bg.existing_boxes) + list(new_boxes)
+            merged_boxes = list(bg_image.boxes) + new_boxes
             self._write_yolo_labels(out_lbl_path, merged_boxes)
-            background_reuse_counts[bg.image_name] = background_reuse_counts.get(bg.image_name, 0) + 1
-            for obj in objects_to_copy:
-                key = self._object_reuse_key(obj.source_image_name, obj.object_index)
+            self._write_augmented_metadata(
+                train_meta_out / f"{out_stem}.json",
+                bg_image,
+                selected_objects,
+                new_boxes,
+                use_score,
+                score_weight_function,
+                score_alpha,
+                reverse_score_guidance,
+                same_image_only,
+                blending_method,
+            )
+
+            # Update reuse counts
+            bg_key = str(bg_image.path)
+            image_reuse_counts[bg_key] = image_reuse_counts.get(bg_key, 0) + 1
+            for obj in selected_objects:
+                key = f"{obj.image_name}:{obj.object_index}"
                 object_reuse_counts[key] = object_reuse_counts.get(key, 0) + 1
 
             generated_count += 1
             self._print_progress(generated_count, num_to_generate)
 
         print()
-        print(f"[Augmentor] Augmentation generation completed ({generated_count}/{num_to_generate})")
+        print(f"[Augmentor] Completed: generated {generated_count}/{num_to_generate} augmented images")
 
         return DatasetProperties(
             root_dir=str(output_root),
@@ -294,13 +271,482 @@ class CopyPasteAugmentor(AugmentorInterface):
             test_labels_dir=initial_dataset_properties.test_labels_dir,
         )
 
+    def _load_images(
+        self,
+        images_dir: Path,
+        labels_dir: Path,
+        image_extensions: list[str],
+        scoring_results: ScoringResults | None = None,
+    ) -> list[ImageData]:
+        """Load images and their labels"""
+        images = []
+        score_map = self._build_score_map(scoring_results) if scoring_results else {}
+
+        image_paths = sorted(
+            [p for p in images_dir.rglob("*") if p.is_file() and p.suffix.lower() in image_extensions]
+        )
+
+        for image_path in image_paths:
+            label_path = labels_dir / f"{image_path.stem}.txt"
+            boxes = self._read_yolo_labels(label_path)
+            score = score_map.get(image_path.name, 0.0)
+
+            images.append(
+                ImageData(
+                    name=image_path.name,
+                    path=image_path,
+                    boxes=boxes,
+                    score=score,
+                )
+            )
+
+        return images
+
+    def _load_objects(
+        self,
+        images: list[ImageData],
+        scoring_results: ScoringResults | None = None,
+        min_object_area_px: float = 0.0,
+    ) -> list[ObjectData]:
+        """Extract all objects from images"""
+        objects = []
+        score_map = self._build_object_score_map(scoring_results) if scoring_results else {}
+        min_area = max(float(min_object_area_px), 0.0)
+        filtered_small_objects = 0
+
+        for image in images:
+            image_array = cv2.imread(str(image.path), cv2.IMREAD_COLOR)
+            if image_array is None:
+                continue
+            image_h, image_w = image_array.shape[:2]
+
+            for obj_idx, bbox in enumerate(image.boxes):
+                _, _, _, bbox_w, bbox_h = bbox
+                bbox_area_px = max(float(bbox_w), 0.0) * max(float(bbox_h), 0.0) * image_w * image_h
+                if bbox_area_px < min_area:
+                    filtered_small_objects += 1
+                    continue
+
+                score_key = f"{image.name}:{obj_idx}"
+                score = score_map.get(score_key, 0.0)
+
+                objects.append(
+                    ObjectData(
+                        image_name=image.name,
+                        image_path=image.path,
+                        object_index=obj_idx,
+                        bbox=bbox,
+                        score=score,
+                    )
+                )
+
+        if min_area > 0 and filtered_small_objects > 0:
+            print(
+                f"[Augmentor] Filtered out {filtered_small_objects} objects below area threshold ({min_area:.1f} px^2)"
+            )
+
+        return objects
+
+    def _select_image(
+        self,
+        images: list[ImageData],
+        reuse_counts: dict[str, int],
+        max_reuse: int | None,
+        use_score: bool,
+        score_weight_function: str,
+        score_alpha: float,
+        reverse_score_guidance: bool,
+        rng: random.Random,
+    ) -> ImageData | None:
+        """Select a background image, respecting reuse caps"""
+        available = [
+            img for img in images
+            if max_reuse is None or reuse_counts.get(str(img.path), 0) < max_reuse
+        ]
+
+        if not available:
+            return None
+
+        if not use_score:
+            return rng.choice(available)
+
+        # Score-guided selection
+        weights = self._scores_to_weights(
+            [img.score for img in available],
+            score_weight_function,
+            score_alpha,
+            reverse_score_guidance,
+        )
+        return rng.choices(available, weights=weights, k=1)[0]
+
     @staticmethod
+    def _normalize_reuse_cap(value: Any) -> int | None:
+        """Normalize reuse cap from config. Returns None when disabled/invalid."""
+        if value is None:
+            return None
+        try:
+            cap = int(value)
+        except (TypeError, ValueError):
+            return None
+        return cap if cap > 0 else None
+
+    def _select_objects(
+        self,
+        objects: list[ObjectData],
+        reuse_counts: dict[str, int],
+        max_reuse: int | None,
+        num_to_select: int,
+        use_score: bool,
+        score_weight_function: str,
+        score_alpha: float,
+        reverse_score_guidance: bool,
+        rng: random.Random,
+    ) -> list[ObjectData]:
+        """Select objects to copy, allowing within-image repeats while enforcing reuse caps."""
+        if not objects or num_to_select <= 0:
+            return []
+
+        selected: list[ObjectData] = []
+        selected_counts: dict[str, int] = {}
+
+        for _ in range(num_to_select):
+            available = []
+            for obj in objects:
+                key = f"{obj.image_name}:{obj.object_index}"
+                current_count = reuse_counts.get(key, 0) + selected_counts.get(key, 0)
+                if max_reuse is None or current_count < max_reuse:
+                    available.append(obj)
+
+            if not available:
+                break
+
+            if use_score:
+                weights = self._scores_to_weights(
+                    [obj.score for obj in available],
+                    score_weight_function,
+                    score_alpha,
+                    reverse_score_guidance,
+                )
+                picked = rng.choices(available, weights=weights, k=1)[0]
+            else:
+                picked = rng.choice(available)
+
+            selected.append(picked)
+            key = f"{picked.image_name}:{picked.object_index}"
+            selected_counts[key] = selected_counts.get(key, 0) + 1
+
+        return selected
+
+    @staticmethod
+    def _scores_to_weights(scores: list[float], function_name: str, alpha: float, reverse: bool = False) -> list[float]:
+        """Convert raw scores to positive sampling weights.
+
+        Supported functions:
+        - linear: weight = normalized_score^alpha
+        - exponential: weight = exp(alpha * normalized_score) - 1
+        
+        If reverse=True, uses 1 - normalized_score instead (lower scores get higher weights).
+        """
+        if not scores:
+            return []
+
+        cleaned = [max(float(s), 0.0) for s in scores]
+        min_s = min(cleaned)
+        max_s = max(cleaned)
+        if max_s > min_s:
+            normalized = [(s - min_s) / (max_s - min_s) for s in cleaned]
+        else:
+            normalized = [1.0 for _ in cleaned]
+
+        # Reverse scores if requested (so lower scores get selected more often)
+        if reverse:
+            normalized = [1.0 - x for x in normalized]
+
+        fn = function_name.strip().lower()
+        if fn == "liner":
+            fn = "linear"
+        if fn not in {"linear", "exponential"}:
+            fn = "linear"
+
+        a = max(1.0, float(alpha))
+        eps = 1e-6
+        if fn == "exponential":
+            return [float(np.exp(a * x) - 1.0 + eps) for x in normalized]
+
+        return [float((x ** a) + eps) for x in normalized]
+
+    def _paste_objects(
+        self,
+        bg_image: ImageData,
+        objects: list[ObjectData],
+        scale_factor: float,
+        rotation_deg: float,
+        synthesizer: ImageSynthesizer,
+        avoid_overlap: bool,
+        placement_margin_px: int,
+        random_placement_attempts: int,
+        use_jiggle_placement: bool,
+        placement_control: bool,
+        rng: random.Random,
+    ) -> tuple[np.ndarray, list[tuple[int, float, float, float, float]]]:
+        """Paste objects onto background image with resize, rotation, and collision avoidance"""
+        bg_img = cv2.imread(str(bg_image.path), cv2.IMREAD_COLOR)
+        if bg_img is None:
+            raise RuntimeError(f"Failed to read background image: {bg_image.path}")
+
+        bg_h, bg_w = bg_img.shape[:2]
+        new_boxes: list[tuple[int, float, float, float, float]] = []
+
+        # Convert existing boxes to pixel coordinates for collision detection
+        existing_boxes_px: list[tuple[float, float, float, float]] = []
+        for cls_id, x_center, y_center, width, height in bg_image.boxes:
+            x1 = (x_center - width / 2) * bg_w
+            y1 = (y_center - height / 2) * bg_h
+            x2 = (x_center + width / 2) * bg_w
+            y2 = (y_center + height / 2) * bg_h
+            existing_boxes_px.append((x1, y1, x2, y2))
+
+        for obj in objects:
+            # Extract object from source image
+            src_img = cv2.imread(str(obj.image_path), cv2.IMREAD_COLOR)
+            if src_img is None:
+                continue
+
+            src_h, src_w = src_img.shape[:2]
+            cls_id, x_center, y_center, width, height = obj.bbox
+
+            # Convert YOLO format to pixel coordinates
+            x1 = int((x_center - width / 2) * src_w)
+            y1 = int((y_center - height / 2) * src_h)
+            x2 = int((x_center + width / 2) * src_w)
+            y2 = int((y_center + height / 2) * src_h)
+
+            # Clip to valid range
+            x1 = max(0, min(x1, src_w - 1))
+            y1 = max(0, min(y1, src_h - 1))
+            x2 = max(x1 + 1, min(x2, src_w))
+            y2 = max(y1 + 1, min(y2, src_h))
+
+            obj_crop = src_img[y1:y2, x1:x2]
+            if obj_crop.size == 0:
+                continue
+
+            # Reuse blending/transform implementation from ImageSynthesizer.
+            obj_h, obj_w = obj_crop.shape[:2]
+            obj_mask = np.full((obj_h, obj_w), 255, dtype=np.uint8)
+            obj_pixels, obj_mask = synthesizer.transform_object_patch(
+                obj_crop,
+                obj_mask,
+                scale_factor=scale_factor,
+                rotation_deg=rotation_deg,
+            )
+
+            obj_h_pasted, obj_w_pasted = obj_pixels.shape[:2]
+            if obj_h_pasted <= 0 or obj_w_pasted <= 0:
+                continue
+
+            # Find valid placement that avoids collision with existing boxes
+            paste_x, paste_y = self._find_valid_placement(
+                bg_w,
+                bg_h,
+                obj_w_pasted,
+                obj_h_pasted,
+                existing_boxes_px,
+                avoid_overlap,
+                placement_margin_px,
+                random_placement_attempts,
+                use_jiggle_placement,
+                placement_control,
+                rng,
+            )
+
+            if paste_x is None or paste_y is None:
+                # Could not find valid placement
+                continue
+
+            # Paste object onto background
+            if paste_y + obj_h_pasted <= bg_h and paste_x + obj_w_pasted <= bg_w:
+                debug_tag = f"bg={bg_image.name}|src={obj.image_name}|obj={obj.object_index}"
+                bg_img, bbox_xyxy = synthesizer.blend_and_paste(
+                    bg_img,
+                    obj_pixels,
+                    obj_mask,
+                    (paste_x, paste_y),
+                    debug_tag=debug_tag,
+                )
+                x1_px, y1_px, x2_px, y2_px = bbox_xyxy
+                if x2_px <= x1_px or y2_px <= y1_px:
+                    continue
+
+                # Convert back to YOLO format
+                new_x_center = ((x1_px + x2_px) / 2) / bg_w
+                new_y_center = ((y1_px + y2_px) / 2) / bg_h
+                new_width = max(0.0, (x2_px - x1_px) / bg_w)
+                new_height = max(0.0, (y2_px - y1_px) / bg_h)
+
+                new_boxes.append((cls_id, new_x_center, new_y_center, new_width, new_height))
+
+                # Add new box to existing boxes for future collision checks
+                existing_boxes_px.append((float(paste_x), float(paste_y), 
+                                         float(paste_x + obj_w_pasted), float(paste_y + obj_h_pasted)))
+
+        return bg_img, new_boxes
+
+    def _find_valid_placement(
+        self,
+        bg_w: int,
+        bg_h: int,
+        obj_w: int,
+        obj_h: int,
+        existing_boxes_px: list[tuple[float, float, float, float]],
+        avoid_overlap: bool,
+        margin: int,
+        random_attempts: int,
+        use_jiggle_placement: bool,
+        placement_control: bool,
+        rng: random.Random,
+    ) -> tuple[int | None, int | None]:
+        """Find a valid placement position that avoids collision with existing boxes.
+        
+        Strategy:
+        1. If placement control is enabled, try positions around existing boxes first
+        2. Otherwise try random placements first
+        3. Fall back to the other strategy if needed
+        4. Return None if no valid position found
+        """
+        max_x = max(0, bg_w - obj_w)
+        max_y = max(0, bg_h - obj_h)
+
+        def try_random() -> tuple[int | None, int | None]:
+            for _ in range(max(1, random_attempts)):
+                paste_x = rng.randint(0, max_x) if max_x > 0 else 0
+                paste_y = rng.randint(0, max_y) if max_y > 0 else 0
+
+                if not avoid_overlap:
+                    return paste_x, paste_y
+
+                new_box = (float(paste_x), float(paste_y), float(paste_x + obj_w), float(paste_y + obj_h))
+                if not self._collision_with_existing(new_box, existing_boxes_px, margin):
+                    return paste_x, paste_y
+            return None, None
+
+        def try_jiggle() -> tuple[int | None, int | None]:
+            if not (avoid_overlap and use_jiggle_placement and existing_boxes_px):
+                return None, None
+            candidates = []
+            for ex_x1, ex_y1, ex_x2, ex_y2 in existing_boxes_px:
+                # Try positions: above, below, left, right of existing box
+                jiggle_positions = [
+                    # Above
+                    ((ex_x1 + ex_x2) / 2 - obj_w / 2, ex_y1 - obj_h - margin),
+                    # Below
+                    ((ex_x1 + ex_x2) / 2 - obj_w / 2, ex_y2 + margin),
+                    # Left
+                    (ex_x1 - obj_w - margin, (ex_y1 + ex_y2) / 2 - obj_h / 2),
+                    # Right
+                    (ex_x2 + margin, (ex_y1 + ex_y2) / 2 - obj_h / 2),
+                    # Top-left corner
+                    (ex_x1 - obj_w - margin, ex_y1 - obj_h - margin),
+                    # Top-right corner
+                    (ex_x2 + margin, ex_y1 - obj_h - margin),
+                    # Bottom-left corner
+                    (ex_x1 - obj_w - margin, ex_y2 + margin),
+                    # Bottom-right corner
+                    (ex_x2 + margin, ex_y2 + margin),
+                ]
+
+                for px, py in jiggle_positions:
+                    paste_x = max(0, min(int(px), bg_w - obj_w))
+                    paste_y = max(0, min(int(py), bg_h - obj_h))
+
+                    if paste_y + obj_h <= bg_h and paste_x + obj_w <= bg_w:
+                        new_box = (float(paste_x), float(paste_y), float(paste_x + obj_w), float(paste_y + obj_h))
+                        if not self._collision_with_existing(new_box, existing_boxes_px, margin):
+                            candidates.append((paste_x, paste_y))
+
+            if candidates:
+                paste_x, paste_y = rng.choice(candidates)
+                return paste_x, paste_y
+
+            return None, None
+
+        if placement_control:
+            paste_x, paste_y = try_jiggle()
+            if paste_x is not None and paste_y is not None:
+                return paste_x, paste_y
+            return try_random()
+
+        paste_x, paste_y = try_random()
+        if paste_x is not None and paste_y is not None:
+            return paste_x, paste_y
+
+        return try_jiggle()
+
+    @staticmethod
+    def _collision_with_existing(
+        new_box: tuple[float, float, float, float],
+        existing_boxes_px: list[tuple[float, float, float, float]],
+        margin: int = 0,
+    ) -> bool:
+        """Check if new box collides with any existing box"""
+        for ex_box in existing_boxes_px:
+            # Apply margin by expanding existing box
+            ex_x1, ex_y1, ex_x2, ex_y2 = ex_box
+            ex_x1_expanded = ex_x1 - margin
+            ex_y1_expanded = ex_y1 - margin
+            ex_x2_expanded = ex_x2 + margin
+            ex_y2_expanded = ex_y2 + margin
+
+            if boxes_overlap(new_box, (ex_x1_expanded, ex_y1_expanded, ex_x2_expanded, ex_y2_expanded)):
+                return True
+
+        return False
+
+    @staticmethod
+    def _build_score_map(scoring_results: ScoringResults) -> dict[str, float]:
+        """Build image name -> score mapping"""
+        score_map = {}
+        for img in scoring_results.image_difficulties:
+            p = Path(img.image_path)
+            score_map[p.name] = float(img.difficulty_score)
+            score_map[p.stem] = float(img.difficulty_score)
+        return score_map
+
+    @staticmethod
+    def _build_object_score_map(scoring_results: ScoringResults) -> dict[str, float]:
+        """Build (image_name:object_id) -> score mapping"""
+        score_map = {}
+        for img in scoring_results.image_difficulties:
+            p = Path(img.image_path)
+            for obj in img.objects_score:
+                score_map[f"{p.name}:{int(obj.object_id)}"] = float(obj.difficulty_score)
+                score_map[f"{p.stem}:{int(obj.object_id)}"] = float(obj.difficulty_score)
+        return score_map
+
+    @staticmethod
+    def _read_yolo_labels(label_path: Path) -> list[tuple[int, float, float, float, float]]:
+        """Read YOLO format labels"""
+        if not label_path.exists():
+            return []
+        boxes = []
+        with label_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                parts = line.strip().split()
+                if len(parts) != 5:
+                    continue
+                cls_id = int(float(parts[0]))
+                x_center, y_center, width, height = map(float, parts[1:])
+                boxes.append((cls_id, x_center, y_center, width, height))
+        return boxes
+
     def _copy_original_train_split(
+        self,
         src_images: Path,
         src_labels: Path,
         dst_images: Path,
         dst_labels: Path,
     ) -> None:
+        """Copy original training images and labels to output directory"""
         for p in src_images.glob("*"):
             if p.is_file():
                 shutil.copy2(p, dst_images / p.name)
@@ -309,14 +755,73 @@ class CopyPasteAugmentor(AugmentorInterface):
 
     @staticmethod
     def _write_yolo_labels(path: Path, boxes: list[tuple[int, float, float, float, float]]) -> None:
+        """Write boxes in YOLO format"""
         with open(path, "w", encoding="utf-8") as f:
             for cls_id, xc, yc, w, h in boxes:
                 f.write(f"{int(cls_id)} {float(xc):.6f} {float(yc):.6f} {float(w):.6f} {float(h):.6f}\n")
 
     @staticmethod
-    def _remove_previous_augmented_outputs(images_dir: Path, labels_dir: Path) -> tuple[int, int]:
+    def _write_augmented_metadata(
+        path: Path,
+        bg_image: ImageData,
+        selected_objects: list[ObjectData],
+        new_boxes: list[tuple[int, float, float, float, float]],
+        use_score: bool,
+        score_weight_function: str,
+        score_alpha: float,
+        reverse_score_guidance: bool,
+        same_image_only: bool,
+        blending_method: str,
+    ) -> None:
+        """Write per-augmented-image provenance metadata for notebook analysis."""
+        payload = {
+            "background_image_name": bg_image.name,
+            "background_image_path": str(bg_image.path),
+            "background_box_count": len(bg_image.boxes),
+            "selected_object_count": len(selected_objects),
+            "pasted_object_count": len(new_boxes),
+            "use_score_guidance": bool(use_score),
+            "reverse_score_guidance": bool(reverse_score_guidance),
+            "same_image_only": bool(same_image_only),
+            "blending_method": str(blending_method),
+            "score_weight_function": str(score_weight_function),
+            "score_alpha": float(score_alpha),
+            "selected_objects": [
+                {
+                    "source_image_name": obj.image_name,
+                    "source_image_path": str(obj.image_path),
+                    "source_object_index": int(obj.object_index),
+                    "class_id": int(obj.bbox[0]),
+                    "score": float(obj.score),
+                    "bbox_yolo": [
+                        float(obj.bbox[1]),
+                        float(obj.bbox[2]),
+                        float(obj.bbox[3]),
+                        float(obj.bbox[4]),
+                    ],
+                }
+                for obj in selected_objects
+            ],
+            "pasted_boxes": [
+                {
+                    "class_id": int(cls_id),
+                    "x_center": float(xc),
+                    "y_center": float(yc),
+                    "width": float(w),
+                    "height": float(h),
+                }
+                for cls_id, xc, yc, w, h in new_boxes
+            ],
+        }
+        with path.open("w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
+
+    @staticmethod
+    def _remove_previous_augmented_outputs(images_dir: Path, labels_dir: Path, metadata_dir: Path) -> tuple[int, int, int]:
+        """Remove previously generated augmented outputs"""
         removed_images = 0
         removed_labels = 0
+        removed_metadata = 0
 
         for p in images_dir.glob("aug_*.*"):
             if p.is_file():
@@ -328,10 +833,16 @@ class CopyPasteAugmentor(AugmentorInterface):
                 p.unlink()
                 removed_labels += 1
 
-        return removed_images, removed_labels
+        for p in metadata_dir.glob("aug_*.json"):
+            if p.is_file():
+                p.unlink()
+                removed_metadata += 1
+
+        return removed_images, removed_labels, removed_metadata
 
     @staticmethod
     def _print_progress(current: int, total: int) -> None:
+        """Print progress bar"""
         if total <= 0:
             return
         width = 30

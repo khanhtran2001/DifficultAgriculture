@@ -24,11 +24,26 @@ class Baseline(BaselineInterface):
         else:
             raise ValueError(f"Unsupported baseline model type: {model_type}")
     
-    def custom_train(self, dataset_properties: DatasetProperties, output_dir: str) -> str:
+    def custom_train(
+        self,
+        dataset_properties: DatasetProperties,
+        output_dir: str,
+        image_score_map: dict[str, float] | None = None,
+        weight_function: str = "linear",
+        weight_gamma: float = 1.0,
+        normalize_scores: bool = True,
+    ) -> str:
         """
         Train the baseline model and return path to best weights.
         """
-        return self.model.custom_train(dataset_properties, output_dir)
+        return self.model.custom_train(
+            dataset_properties,
+            output_dir,
+            image_score_map=image_score_map,
+            weight_function=weight_function,
+            weight_gamma=weight_gamma,
+            normalize_scores=normalize_scores,
+        )
     
     def custom_evaluate_on_test_set(self, best_weight_path: str, dataset_properties: DatasetProperties) -> EvaluationResults:
         """Evaluate baseline model on test set and return typed evaluation results."""
