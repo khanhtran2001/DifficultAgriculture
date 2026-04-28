@@ -1,312 +1,266 @@
 \documentclass[11pt, a4paper]{article}
 
 \usepackage[margin=1in]{geometry}
-\usepackage{hyperref}
 \usepackage{graphicx}
-\usepackage{titlesec}
 \usepackage{booktabs}
 \usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{hyperref}
+\usepackage{titlesec}
 
 \titleformat{\section}{\large\bfseries}{\thesection}{1em}{}
 \titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{1em}{}
 
-\title{\textbf{Copy-Paste Augmentation Report (Seed 123)}}
-\author{Huy Khanh Tran}
+\graphicspath{{../Overall_Report/figures/}{../Problems_Report/figures/}}
+
+\title{\textbf{Copy-Paste Augmentation Report for MinneApple and Global Wheat Head}}
+\author{}
 
 \begin{document}
 
 \maketitle
 
 \section{Objective}
-This report has 3 main objectives:
+This report aims to show my analysis and thinking about why detection performance decreases when using copy-paste augmentation.
+
+\section{Recap}
 \begin{itemize}
-	\item Summarize what copy-paste experiments are currently being executed.
-	\item Quantify how each selected copy-paste configuration affects detection performance.
-	\item Clearly state the current problems observed from the latest seed-123 results.
-\end{itemize}
+\item \textbf{Scoring system:} the score is meant to measure how hard each object and image is for the detector. For an object $g$, we use low-confidence predictions and compute
 
-\vspace{1em}
-\section{Research Summary}
+Let $G(I)$ be the set of ground-truth objects in image $I$, and let $\mathcal{P}$ be the set of model predictions. For a ground-truth object $g$ denote by
+\[\mathcal{P}(g;\tau)\;=\;\{\;p\in\mathcal{P}:\;\mathrm{IoU}(p,g)\ge\tau\;\}\]
+the subset of predictions whose intersection-over-union with $g$ exceeds the IoU threshold $\tau\in[0,1]$. Each prediction $p$ has a confidence $\mathrm{conf}(p)\in[0,1]$ and an IoU value $\mathrm{IoU}(p,g)\in[0,1]$.
 
-\textbf{Current focus:} We are analyzing \textbf{how copy-paste augmentation configuration choices affect AP metrics}.
-
-\vspace{0.5em}
-The two completed experiments used in this report are:
-\begin{itemize}
-	\item \textbf{Exp 15 (MinneApple):} ratio sweep with score-guided selection and fixed \texttt{same\_image\_only=true}.
-	\item \textbf{Exp 17 (Global Wheat Head):} A/B test of \texttt{same\_image\_only} on/off under random selection.
-\end{itemize}
-
-\vspace{0.5em}
-\textbf{Important scope note:} This report intentionally uses \textbf{seed 123 only} as requested. Therefore, conclusions should be treated as directional and not final until multi-seed confirmation.
-
-\vspace{1em}
-\section{What Experiments I Am Doing}
-
-\subsection{Experiment 15: Dataset Ratio Sweep (MinneApple)}
-\textbf{Goal:} Check how the number of generated augmented images (\texttt{dataset\_ratio}) changes performance.
-
-\textbf{Main controlled setup:}
-\begin{itemize}
-	\item Dataset: MinneApple.
-	\item Selection mode: score-guided (\texttt{use\_score\_guidance=true}).
-	\item \texttt{same\_image\_only=true}.
-	\item Ratios tested: \{0.5, 1.0, 2.0, 3.0\}.
-	\item Other copy-paste settings fixed: min/max pasted objects (2, 8), reuse caps (3, 3), overlap avoidance enabled.
-\end{itemize}
-
-\subsection{Experiment 17: Same-Image-Only Flag Check (Global Wheat Head)}
-\textbf{Goal:} Decide whether \texttt{same\_image\_only} should be enabled.
-
-\textbf{Main controlled setup:}
-\begin{itemize}
-	\item Dataset: Global Wheat Head.
-	\item Selection mode: random (\texttt{use\_score\_guidance=false}).
-	\item \texttt{dataset\_ratio=2.0} fixed.
-	\item Compare two conditions only:
-	\begin{itemize}
-		\item \texttt{same\_image\_only=true}
-		\item \texttt{same\_image\_only=false}
-	\end{itemize}
-\end{itemize}
-
-\vspace{1em}
-\section{Config Impact on Performance (Seed 123)}
-
-\subsection{Exp : Effect of \texttt{expansion\_ratio} on MinneApple}
-
-Baseline on original test set (before copy-paste):
+For $\alpha,\beta\ge0$ we define the object difficulty score
 \[
-\text{COCO\_AP}=0.3822,\quad \text{COCO\_AP50}=0.7077,\quad \text{COCO\_AP75}=0.3741
+S_{\mathrm{obj}}(g)
+=
+\begin{cases}
+\displaystyle\min_{p\in\mathcal{P}(g;\tau)}\left[\alpha\bigl(1-\mathrm{conf}(p)\bigr)+\beta\bigl(1-\mathrm{IoU}(p,g)\bigr)\right], & \mathcal{P}(g;\tau)\neq\varnothing, \\
+\alpha+\beta, & \mathcal{P}(g;\tau)=\varnothing.
+\end{cases}
 \]
 
-\begin{center}
-\small
-\textbf{Table 1. Exp 15 (Seed 123): Ratio sweep vs baseline}\
-\resizebox{\linewidth}{!}{%
-\begin{tabular}{@{}lrrrrrr@{}}
-\toprule
-\textbf{Setting} & \textbf{COCO\_AP} & \textbf{$\Delta$AP} & \textbf{COCO\_AP50} & \textbf{COCO\_AP75} & \textbf{AP\_small} & \textbf{AP\_large} \\
-\midrule
-Baseline & 0.3822 & 0.0000 & 0.7077 & 0.3741 & 0.2440 & 0.1386 \\
-Ratio = 0.5 & 0.3541 & -0.0280 & 0.6513 & 0.3512 & 0.2140 & 0.2931 \\
-Ratio = 1.0 & 0.3560 & -0.0261 & 0.6466 & 0.3581 & 0.2154 & 0.3376 \\
-Ratio = 2.0 & 0.3533 & -0.0289 & 0.6432 & 0.3576 & 0.2093 & 0.3366 \\
-Ratio = 3.0 & 0.3470 & -0.0352 & 0.6288 & 0.3467 & 0.2063 & 0.2366 \\
-\bottomrule
-\end{tabular}
-}
-\end{center}
-
-\textbf{Observation (Exp 15):}
+This definition has the following properties:
 \begin{itemize}
-	\item All tested ratios reduce overall COCO\_AP relative to baseline.
-	\item The least drop appears at ratio 1.0, but it is still negative.
-	\item AP\_large increases strongly while AP and AP\_small drop, indicating a trade-off rather than a true global gain.
+\item Lower confidence or lower IoU increases the score (more difficult). 
+\item The upper bound for $S_{\mathrm{obj}}(g)$ is $\alpha+\beta$ (occurs when no matching prediction exists). 
 \end{itemize}
 
-\subsection{Exp 17: Effect of \texttt{same\_image\_only} on Global Wheat Head}
+The image-level difficulty score aggregates object difficulties and penalizes false positives. 
 
-Baseline on original test set (before copy-paste):
+With aggregation weights $w_1,w_2\ge0$, we define:
 \[
-\text{COCO\_AP}=0.5090,\quad \text{COCO\_AP50}=0.9259,\quad \text{COCO\_AP75}=0.4901
+S_{\mathrm{img}}(I)=w_1\cdot\frac{1}{|G(I)|}\sum_{g\in G(I)}S_{\mathrm{obj}}(g)\;+
+\;w_2\cdot\mathrm{FP\ rate}(I;\gamma,\tau).
 \]
 
-\begin{center}
+Interpretation: higher $S_{\mathrm{img}}(I)$ indicates that the image contains harder-to-detect objects and/or a larger proportion of false positives.
+
+\item \textbf{Copy-paste pipeline:} we use this because we believe increasing the appearance of objects and backgrounds can improve performance in agricultural detection problems.
+\begin{enumerate}
+\item Select a background image.
+\item Select one or more objects to paste.
+\item Determine how many objects to paste (2-8 objects).
+\item Apply geometry transformations (scaling and rotation) on selected objects.
+\item Paste objects and generate new labels.
+\end{enumerate}
+\end{itemize}
+
+\section{Experiments}
+We ran two experiments to compare detection results under baseline, random copy-paste, and score-guided copy-paste.
+
+The same pipeline was used across seeds 123, 456, and 789, detail can be see in Table \ref{tab:augmentation_config}: dataset ratio 0.3, 2--5 pasted objects per image, scale jitter within $\pm 20\%$, rotation within $\pm 15^\circ$, overlap avoidance enabled, and only the selection policy changed between random and score-guided sampling.
+
+\subsection{MinneApple results}
+\begin{table}[htbp]
+\centering
 \small
-\textbf{Table 2. Exp 17 (Seed 123): same\_image\_only on/off vs baseline}\\
-\resizebox{\linewidth}{!}{%
-\begin{tabular}{@{}lrrrrrr@{}}
+\setlength{\tabcolsep}{4pt}
+\caption{MinneApple: 3-seed mean COCO AP on the original test set}
+\label{tab:minneapple_results}
+\begin{tabular}{lrrrrrr}
 \toprule
-\textbf{Setting} & \textbf{COCO\_AP} & \textbf{$\Delta$AP} & \textbf{COCO\_AP50} & \textbf{COCO\_AP75} & \textbf{AP\_small} & \textbf{AP\_large} \\
+Condition & AP & AP50 & AP75 & AP$_S$ & AP$_M$ & AP$_L$ \\
 \midrule
-Baseline & 0.5090 & 0.0000 & 0.9259 & 0.4901 & 0.1346 & 0.5525 \\
-same\_image\_only = true & 0.4989 & -0.0101 & 0.9188 & 0.4803 & 0.1055 & 0.5487 \\
-same\_image\_only = false & 0.5014 & -0.0075 & 0.9173 & 0.4866 & 0.0932 & 0.5585 \\
+Baseline & 0.439 & 0.771 & 0.452 & 0.300 & 0.592 & 0.645 \\
+Random CP & 0.415 & 0.741 & 0.427 & 0.279 & 0.563 & 0.669 \\
+\textbf{Score CP} & \textbf{0.428} & \textbf{0.759} & \textbf{0.440} & \textbf{0.286} & \textbf{0.581} & \textbf{0.637} \\
+\bottomrule
+\end{tabular}%
+\end{table}
+
+\begin{itemize}
+\item MinneApple is the only case where score-guided copy-paste is clearly better than random copy-paste, but the improvement is still not enough to recover the baseline.
+\item  Score CP improves AP, AP50, AP75, and especially AP$_S$ and AP$_M$ relative to Random CP, indicating the score pushes selection toward smaller and medium objects.
+\item  Both augmentation variants still reduce performance compared with the baseline; the gain is only relative, not absolute.
+\end{itemize}
+
+\subsection{Global Wheat Head results}
+\begin{table}[htbp]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\caption{Global Wheat Head: 3-seed mean COCO AP on the original test set}
+\label{tab:gwhd_results}
+\begin{tabular}{lrrrrrr}
+\toprule
+Condition & AP & AP50 & AP75 & AP$_S$ & AP$_M$ & AP$_L$ \\
+\midrule
+Baseline & 0.507 & 0.922 & 0.491 & 0.136 & 0.501 & 0.550 \\
+Random CP & 0.486 & 0.905 & 0.456 & 0.118 & 0.480 & 0.529 \\
+\textbf{Score CP} & \textbf{0.484} & \textbf{0.905} & \textbf{0.455} & \textbf{0.098} & \textbf{0.477} & \textbf{0.531} \\
+\bottomrule
+\end{tabular}%
+\end{table}
+
+\begin{itemize}
+\item  Global Wheat Head shows the same failure pattern, with even less separation between random and score-guided selection.
+\item  Both copy-paste variants remain below baseline on every main metric; Score CP is only marginally different from Random CP.
+\item  The gap is too small to support a meaningful claim of improvement; this appears to be augmentation noise rather than a useful intervention.
+\end{itemize}
+
+\section{Analysis and Hypotheses}
+
+\subsection{MinneApple}
+\begin{itemize}
+\item \textbf{Observation:} The augmented examples still look somewhat artificial, even though the pasted objects are visually plausible (see Appendix Figures~\ref{fig:minneapple_aug_vs_ori} and~\ref{fig:minneapple_object_paste}). Moreover, in the feature-space view, the initial training distribution is already quite far from the test distribution, and the augmented data does not clearly move it closer (see Appendix Figure~\ref{fig:minneapple_feature_space}).
+\item \textbf{Analysis:} The feature-space and object-paste views suggest that the augmentation is changing the training distribution without clearly moving it toward the test distribution (see Appendix Figures~\ref{fig:minneapple_feature_space} and~\ref{fig:minneapple_object_paste}). 
+\item \textbf{Hypothesis:} The performance drop comes from pasted-object noise and from augmented images that are not close enough to the test distribution.
+\end{itemize}
+
+\subsection{Global Wheat Head}
+\begin{itemize}
+\item \textbf{Observation:} Score-guided sampling concentrates pasted objects in a narrower portion of the source domains, especially the arvalis domains (see Appendix Figure~\ref{fig:gwhd_add_augmentation}).
+\item \textbf{Analysis:} This concentration does not improve detection, and the feature-space plus AP views still indicate a mismatch with test performance (see Appendix Figures~\ref{fig:gwhd_feature_space} and~\ref{fig:gwhd_ap_result}).
+\item \textbf{Hypothesis:} GWHD is dominated by domain shift, so copy-paste alone is unlikely to solve the real problem. The question of why score-guiided new augmentation image make it far differnt from the original set in the embeddig space is still open.
+\end{itemize}
+
+\section{Conclusion}
+\begin{itemize}
+\item On MinneApple, score-guided copy-paste is better than random copy-paste, especially for small and medium objects, but both still underperform the baseline. 
+\item On Global Wheat Head, random and score-guided sampling are almost the same, and both remain below baseline. Overall, the evidence suggests that copy-paste adds noise and does not reliably move the training data toward the test distribution. For GWHD, the failure mode looks too much like domain shift to be solved by copy-paste alone.
+\item 
+\end{itemize}
+
+\appendix
+\section{Appendix: Additional Figures and Details}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\linewidth,height=0.33\textheight,keepaspectratio]{aug_vs_origin.png}
+\caption{MinneApple: augmented vs. original examples.}
+\label{fig:minneapple_aug_vs_ori}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\linewidth,height=0.33\textheight,keepaspectratio]{mineapple_feature_space.png}
+\caption{MinneApple: feature-space projection.}
+\label{fig:minneapple_feature_space}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\linewidth,height=0.33\textheight,keepaspectratio]{mineapple_object_paste_analysis.png}
+\caption{MinneApple: object-paste analysis.}
+\label{fig:minneapple_object_paste}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\linewidth,height=0.33\textheight,keepaspectratio]{gwhd_augvsori.png}
+\caption{Global Wheat Head: augmented vs. original examples.}
+\label{fig:gwhd_aug_vs_ori}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\linewidth,height=0.33\textheight,keepaspectratio]{gwhd_feature_space.png}
+\caption{Global Wheat Head: feature-space projection.}
+\label{fig:gwhd_feature_space}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\linewidth,height=0.33\textheight,keepaspectratio]{gwhd_ap_result.png}
+\caption{Global Wheat Head: AP comparison result.}
+\label{fig:gwhd_ap_result}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\linewidth,height=0.33\textheight,keepaspectratio]{add_augmentation.png}
+\caption{Global Wheat Head: added augmentation distribution.}
+\label{fig:gwhd_add_augmentation}
+\end{figure}
+
+\subsection{Configuration Tables}
+
+\begin{table}[htbp]
+\centering
+\small
+\setlength{\tabcolsep}{6pt}
+\caption{Training configuration (MinneApple vs Global Wheat Head)}
+\label{tab:training_config}
+\begin{tabular}{lrr}
+\toprule
+Parameter & MinneApple & Global Wheat Head \\
+\midrule
+Epochs & 200 & 100 \\
+Batch size & 16 & 16 \\
+Input size & 1024 & 1024 \\
+Learning rate & 0.01 & 0.01 \\
+Early-stopping patience & 10 & 8 \\
 \bottomrule
 \end{tabular}
-}
-\end{center}
+\end{table}
 
-\textbf{Observation (Exp 17):}
-\begin{itemize}
-	\item Both settings reduce overall COCO\_AP compared with baseline.
-	\item \texttt{same\_image\_only=false} is better on overall AP and AP75.
-	\item \texttt{same\_image\_only=true} is better on AP\_small, but worse on overall AP.
-\end{itemize}
-
-\vspace{1em}
-\section{Multi-Seed Inspection, Configuration, and Results (Exp 12, 13, 19)}
-
-\subsection{Experiment 12 (MinneApple): with-score vs without-score (3 seeds)}
-\textbf{Inspection:}
-\begin{itemize}
-	\item Purpose: compare score-guided selection against random selection under the same copy-paste setup.
-	\item Seeds: \{123, 456, 789\}.
-	\item Main finding: both conditions are below baseline on mean $\Delta$COCO\_AP, but score-guided is less negative.
-\end{itemize}
-
-\begin{center}
+\begin{table}[htbp]
+\centering
 \small
-\textbf{Table 3. Exp 12 configuration summary}\\
-\begin{tabular}{@{}ll@{}}
+\setlength{\tabcolsep}{6pt}
+\caption{Scoring configuration}
+\label{tab:scoring_config}
+\begin{tabular}{lr}
 \toprule
-\textbf{Field} & \textbf{Value} \\
+Parameter & Value \\
 \midrule
-Dataset & MinneApple \\
-Seeds & 123, 456, 789 \\
-Conditions & with\_score, without\_score \\
+Object weight $\alpha$ & 0.5 \\
+IoU penalty weight $\beta$ & 0.5 \\
+IoU threshold $\tau$ & 0.5 \\
+Weight mode & \boldmath{balance\_correlation} \\
 \bottomrule
 \end{tabular}
-\end{center}
+\end{table}
 
-\begin{center}
+\begin{table}[htbp]
+\centering
 \small
-\textbf{Table 4. Exp 12 COCO results (3-seed aggregate means)}\\
-\resizebox{\linewidth}{!}{%
-\begin{tabular}{@{}lrrrrrr@{}}
+\setlength{\tabcolsep}{4pt}
+\caption{Augmentation / Copy-Paste configuration (MinneApple vs Global Wheat Head)}
+\label{tab:augmentation_config}
+\begin{tabular}{lrr}
 \toprule
-\textbf{Setting} & \textbf{COCO\_AP} & \textbf{$\Delta$AP} & \textbf{COCO\_AP50} & \textbf{COCO\_AP75} & \textbf{AP\_small} & \textbf{AP\_large} \\
+Parameter & MinneApple & Global Wheat Head \\
 \midrule
-Baseline & 0.3844 & 0.0000 & 0.7065 & 0.3825 & 0.2497 & 0.1069 \\
-with\_score & 0.3739 & -0.0105 & 0.6873 & 0.3722 & 0.2413 & 0.7288 \\
-without\_score & 0.3677 & -0.0167 & 0.6677 & 0.3703 & 0.2259 & 0.2950 \\
+Use score guidance & true & true \\
+Same-image only & true & true \\
+Score weight function & \texttt{exponential} & \texttt{exponential} \\
+Score $\alpha$ & 2.0 & 2.0 \\
+Dataset ratio & 0.3 & 0.3 \\
+Min objects/image & 2 & 2 \\
+Max objects/image & 8 & 8 \\
+Selection seed & 123 & 123 \\
+Max image reuse & 2 & 3 \\
+Max object reuse & 3 & 3 \\
+Min object area (px$^2$) & 200 & 200 \\
+Scale range & [0.9, 1.1] & [0.8, 1.2] \\
+Rotation max (deg) & 0 & 0 \\
+Blending method & \texttt{none} & \texttt{none} \\
+Avoid overlap & true & true \\
 \bottomrule
 \end{tabular}
-}
-\end{center}
-
-\textbf{Exp 12 recommendation:} \texttt{with\_score} (advantage in mean $\Delta$COCO\_AP: +0.0062).
-
-\subsection{Experiment 13 (Global Wheat Head): with-score vs without-score (3 seeds)}
-\textbf{Inspection:}
-\begin{itemize}
-	\item Purpose: replicate the same comparison as Exp 12 on Global Wheat Head.
-	\item Seeds: \{123, 456, 789\}.
-	\item Main finding: both conditions are below baseline, and random selection (without-score) is slightly better than with-score.
-\end{itemize}
-
-\begin{center}
-\small
-\textbf{Table 5. Exp 13 configuration summary}\\
-\begin{tabular}{@{}ll@{}}
-\toprule
-\textbf{Field} & \textbf{Value} \\
-\midrule
-Dataset & Global Wheat Head \\
-Seeds & 123, 456, 789 \\
-Conditions & with\_score, without\_score \\
-\bottomrule
-\end{tabular}
-\end{center}
-
-\begin{center}
-\small
-\textbf{Table 6. Exp 13 COCO results (3-seed aggregate means)}\\
-\resizebox{\linewidth}{!}{%
-\begin{tabular}{@{}lrrrrrr@{}}
-\toprule
-\textbf{Setting} & \textbf{COCO\_AP} & \textbf{$\Delta$AP} & \textbf{COCO\_AP50} & \textbf{COCO\_AP75} & \textbf{AP\_small} & \textbf{AP\_large} \\
-\midrule
-Baseline & 0.5070 & 0.0000 & 0.9223 & 0.4907 & 0.1365 & 0.5499 \\
-with\_score & 0.4837 & -0.0233 & 0.9045 & 0.4549 & 0.0985 & 0.5308 \\
-without\_score & 0.4857 & -0.0213 & 0.9048 & 0.4556 & 0.1182 & 0.5287 \\
-\bottomrule
-\end{tabular}
-}
-\end{center}
-
-\textbf{Exp 13 recommendation:} \texttt{without\_score} (mean $\Delta$COCO\_AP advantage: +0.0020 over with-score).
-
-\subsection{Experiment 19 (MinneApple): score-alpha sweep (1, 3, 5) with 3 seeds}
-\textbf{Inspection:}
-\begin{itemize}
-	\item Purpose: test sensitivity of score-guided sampling strength via \texttt{score\_alpha} in \{1, 3, 5\}.
-	\item Seeds: \{123, 456, 789\}.
-	\item Main finding: all tested alpha values remain below baseline on mean $\Delta$COCO\_AP; alpha=1 is the least negative.
-\end{itemize}
-
-\begin{center}
-\small
-\textbf{Table 7. Exp 19 configuration summary}\\
-\begin{tabular}{@{}ll@{}}
-\toprule
-\textbf{Field} & \textbf{Value} \\
-\midrule
-Dataset & MinneApple \\
-Seeds & 123, 456, 789 \\
-Condition family & score-guided only (\texttt{use\_score\_guidance=true}) \\
-Sweep variable & \texttt{score\_alpha} in \{1.0, 3.0, 5.0\} \\
-\bottomrule
-\end{tabular}
-\end{center}
-
-\begin{center}
-\small
-\textbf{Table 8. Exp 19 COCO results (3-seed aggregate means)}\\
-\resizebox{\linewidth}{!}{%
-\begin{tabular}{@{}lrrrrrrr@{}}
-\toprule
-\textbf{Setting} & \textbf{COCO\_AP} & \textbf{$\Delta$AP} & \textbf{COCO\_AP50} & \textbf{COCO\_AP75} & \textbf{AP\_small} & \textbf{AP\_large} & \textbf{Rank} \\
-\midrule
-Baseline & 0.3844 & 0.0000 & 0.7065 & 0.3825 & 0.2497 & 0.1069 & -- \\
-alpha = 1.0 & 0.3720 & -0.0124 & 0.6852 & 0.3711 & 0.2343 & 0.6370 & 1 \\
-alpha = 3.0 & 0.3652 & -0.0192 & 0.6656 & 0.3654 & 0.2282 & 0.4322 & 2 \\
-alpha = 5.0 & 0.3619 & -0.0225 & 0.6658 & 0.3602 & 0.2224 & 0.3243 & 3 \\
-\bottomrule
-\end{tabular}
-}
-\end{center}
-
-\textbf{Exp 19 recommendation:} prefer \texttt{score\_alpha=1.0} among tested values.
-
-\vspace{1em}
-\section{Current Problems Seen From These Results}
-
-\subsection{Problem 1: Copy-paste strength (dataset ratio) is not giving net AP gains in Exp 15}
-Even the best tested ratio still underperforms baseline in overall COCO\_AP. This suggests that simply increasing or decreasing generated sample count is not enough to improve generalization on MinneApple under current paste quality and placement settings.
-
-\subsection{Problem 2: The \texttt{same\_image\_only} switch changes metric trade-offs, but does not solve the AP drop}
-In Exp 17, turning \texttt{same\_image\_only} off gives slightly better overall AP, but both on/off remain below baseline. This means the flag matters, but it is not the root cause of the performance gap.
-
-\subsection{Problem 3: Metric behavior is inconsistent across object scales}
-From Exp 15 and Exp 17, some settings help one slice (for example AP\_large or AP\_small) while hurting overall AP. This indicates augmentation is changing the training distribution in a way that is not uniformly beneficial.
-
-\vspace{1em}
-\section{Practical Conclusion (Seed 123 Only)}
-\begin{itemize}
-	\item For Exp 15, no tested \texttt{dataset\_ratio} improves overall AP over baseline.
-	\item For Exp 17, if forced to pick one option from this seed, \texttt{same\_image\_only=false} is preferable for overall AP.
-	\item Current bottleneck is likely not a single scalar hyperparameter; it is likely related to paste realism, localization quality after paste, or distribution mismatch introduced by synthetic samples.
-\end{itemize}
-
-\vspace{1em}
-\section*{Appendix: Raw Numbers Used (Seed 123)}
-\textbf{Exp 15 sources:}
-\begin{itemize}
-	\item Baseline: \texttt{results/15\_find\_dataset\_ratio\_minneapple/seed\_123/Step\_2\_Train\_and\_Evaluate\_BASELINE\_MODEL/evaluation\_baseline\_on\_original\_test.json}
-	\item Ratios: \texttt{results/15\_find\_dataset\_ratio\_minneapple/seed\_123/Step\_5\_Train\_and\_Evaluate\_Model\_on\_Augmented\_Dataset/ratio\_*/evaluation\_augmented\_on\_original\_test.json}
-\end{itemize}
-
-\textbf{Exp 17 sources:}
-\begin{itemize}
-	\item Baseline: \texttt{results/17\_check\_same\_image\_only\_flag/seed\_123/Step\_2\_Train\_and\_Evaluate\_BASELINE\_MODEL/evaluation\_baseline\_on\_original\_test.json}
-	\item same\_image\_only on/off: \texttt{results/17\_check\_same\_image\_only\_flag/seed\_123/Step\_5\_Train\_and\_Evaluate\_Model\_on\_Augmented\_Dataset/*/evaluation\_augmented\_on\_original\_test.json}
-\end{itemize}
-
-\textbf{Exp 12 source:}
-\begin{itemize}
-	\item Summary: \texttt{results/12\_multiseed\_score\_vs\_noscore\_copy\_paste\_exp/summary\_score\_vs\_without\_score\_3seeds.json}
-\end{itemize}
-
-\textbf{Exp 13 source:}
-\begin{itemize}
-	\item Summary: \texttt{results/13\_multiseed\_score\_vs\_noscore\_copy\_paste\_exp\_global\_wheat\_head/summary\_score\_vs\_without\_score\_3seeds.json}
-\end{itemize}
-
-\textbf{Exp 19 source:}
-\begin{itemize}
-	\item Summary: \texttt{results/19\_alpha\_sweep\_multiseed\_cached/summary\_alpha\_sweep\_3seeds.json}
-\end{itemize}
+\end{table}
 
 \end{document}

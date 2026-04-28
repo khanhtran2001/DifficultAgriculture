@@ -49,7 +49,7 @@ outputs/
 
 # The parent result dir is in the folder results/exp_name
 
-RESULTS_DIR = Path(f"results/{Path(__file__).stem}")
+RESULTS_DIR = Path(f"results/{Path(__file__).stem}_gwhd")
 CONFIG_DIR = Path("/home/khanh/Projects/DifficultyAgri/configs/experiments/global_wheat_head_yolo.yaml")
 
 

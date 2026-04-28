@@ -1,0 +1,13 @@
+\section{Introduction}
+
+\subsection{Problem}
+Copy-paste augmentation was introduced to increase object diversity, but in this project it consistently lowered performance on the original test sets. The failure is important because the augmentation is not random noise; it is a structured intervention that should, in principle, improve coverage of hard examples.
+
+\subsection{Hypothesis}
+The working hypothesis is that the selected pasted objects are difficult under the current model, but not necessarily aligned with the target test distribution. If that is true, then the augmentation can raise sample difficulty while still hurting detector calibration and localization quality.
+
+\subsection{What Is Being Tested}
+I compare baseline training against two copy-paste policies: random selection and score-guided selection through MinImageScorer. The goal is not just to see whether performance changes, but to check whether score guidance changes the type of samples the model sees in a useful way.
+
+\subsection{Scope}
+The report focuses on two datasets with different failure modes. MinneApple uses same-image copy-paste, while Global Wheat Head uses cross-image copy-paste across a more heterogeneous distribution. That contrast makes it possible to separate augmentation design issues from dataset-specific effects.

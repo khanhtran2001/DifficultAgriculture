@@ -1,0 +1,421 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{microtype}
+
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+\begin{document}
+
+\title{MinImageScorer: Error-Driven Difficulty Scoring\\
+for Guided Copy-Paste Augmentation in\\
+Agricultural Object Detection}
+
+
+\author{
+\IEEEauthorblockN{[FILL: Author Name\textsuperscript{1},
+                  Supervisor Name\textsuperscript{1}]}
+\IEEEauthorblockA{%
+[FILL: Department of XXX, University of XXX, Country]}
+}
+
+\maketitle
+
+% ----------------------------------------------------------
+\begin{abstract}
+We propose \textbf{MinImageScorer} (MIS), an error-driven framework
+that scores per-object and image difficulty by combining model
+confidence and localization penalties on training-set failure signals.
+Validated on MinneApple and Global Wheat Head (GWHD), MIS reliably
+ranks objects and images by difficulty and
+correctly identifies domain- and size-level failure patterns
+without requiring any addintional infomation.
+When used to guide copy-paste augmentation, MIS-selected objects
+outperform random selection on MinneApple ($\Delta\mathrm{AP}{=}
+{+}0.013$); however, both strategies fall below baseline.
+On GWHD, domain shift renders copy-paste ineffective regardless of
+selection strategy.
+These findings establish MIS as a reliable diagnostic for structural
+difficulty in agricultural detection, while also revealing the
+conditions under which copy-paste augmentation is unlikely to help.
+\end{abstract}
+
+\begin{IEEEkeywords}
+object detection, copy-paste augmentation, difficulty scoring,
+agricultural detection, small objects, domain shift
+\end{IEEEkeywords}
+
+% ----------------------------------------------------------
+\section{Introduction}
+
+Agricultural object detection benchmarks pose structural challenges
+that are qualitatively different from general-purpose datasets such
+as MS COCO. MinneApple~\cite{hani2020minneapple} is dominated by
+densely packed, sub-resolution apple instances where detection
+failure is driven primarily by scale rather than appearance.
+Global Wheat Head Detection (GWHD)~\cite{david2021global} aggregates
+images from seven geographic domains, introducing severe cross-domain
+visual variation that causes systematic performance drops on
+minority-domain images.
+These two failure modes---small-object resolution limits and
+cross-domain distributional shift---are well-documented by the
+respective dataset authors, yet no prior augmentation method
+explicitly diagnoses or targets them all at once automatically.
+
+Copy-paste augmentation has demonstrated small gains on MS
+COCO~\cite{kisantal2019augmentation, ghiasi2021simple}, where
+objects span a broad size distribution and images are largely
+within-distribution.
+Applied blindly to structurally constrained datasets, however,
+copy-paste risks compounding the very failure modes it aims to
+address: pasting sub-resolution objects amplifies scale noise,
+and pasting objects across domains amplifies distributional
+mismatch.
+No prior work provides an empirical criterion for assessing whether
+copy-paste is appropriate for a given dataset \emph{before}
+augmentation is applied.
+
+We address this gap with two contributions.
+First, we introduce \textbf{MinImageScorer} (MIS), a per-object
+difficulty score derived directly from model failure signals.
+We validate that MIS correctly identify dataset structural difficulty
+without access to any additional information.
+Second, we conduct a controlled study showing that score-guided
+copy-paste outperforms random selection on the 
+MinneApple dataset, while both strategies degrade below baseline. 
+On the domain-shifted GWHD dataset, copy-paste
+is ineffective regardless of selection strategy.
+Taken together, these results show that MIS correctly identifies
+where a model fails, and that the failure mode of a dataset itself---not the
+selection strategy---determines whether copy-paste can succeed.
+
+% ----------------------------------------------------------
+\section{Methodology}
+
+\subsection{Scoring Formulation}
+
+Let $G(I)$ be the set of ground-truth objects in image $I$ and
+$\mathcal{P}(g) = \{p : \mathrm{IoU}(p,g) \ge \tau\}$
+the set of predictions matched to ground-truth object $g$.
+Denoting $c_p = \mathrm{conf}(p)$ and $u_p = \mathrm{IoU}(p,g)$,
+the \emph{Object Difficulty Score} is defined as:
+
+\begin{equation}
+S_{\mathrm{obj}}(g) =
+\begin{cases}
+  \min_{p \in \mathcal{P}(g)}
+    \bigl[\alpha(1{-}c_p) + \beta(1{-}u_p)\bigr],
+    & \mathcal{P}(g) \neq \varnothing, \\[3pt]
+  \alpha + \beta, & \text{otherwise,}
+\end{cases}
+\label{eq:obj}
+\end{equation}
+
+where $\alpha$ and $\beta$ weight the confidence and localization
+penalties, respectively.
+% The $\min$ operator selects the best-matching prediction: an object
+% is considered hard only if even its best-matched prediction is
+% uncertain or poorly localized.
+Missed objects (no prediction with $\mathrm{IoU} \ge \tau$) receive
+the maximum score $\alpha{+}\beta$.
+The \emph{Image Difficulty Score} combines mean object difficulty with
+the false-positive rate:
+
+\begin{equation}
+S_{\mathrm{img}}(I)
+  = w_1 \cdot \frac{1}{|G(I)|}
+    \sum_{g\in G(I)} S_{\mathrm{obj}}(g)
+  \;+\; w_2 \cdot \mathrm{FPrate}(I).
+\label{eq:img}
+\end{equation}
+
+Object scoring uses a low confidence threshold ($\tau{=}0.01$)
+to capture near-miss predictions; FP rate is computed at the
+optimal operating threshold to reflect realistic deployment errors.
+Weights $\alpha, \beta, w_1, w_2$ are calibrated by maximizing
+Pearson correlation between $S_{\mathrm{img}}$ and per-image miss
+rate and FP rate on the training set, requiring no domain-specific
+prior knowledge.
+
+\subsection{Score-Guided Copy-Paste Pipeline}
+
+A baseline YOLOv8s detector is first trained on the target dataset.
+Inference on the full training set yields per-prediction confidence
+and IoU values, from which $S_{\mathrm{obj}}$ and $S_{\mathrm{img}}$
+are computed for every annotated object and image.
+
+Following the same pipeline as the author of \cite{kisantal2019augmentation} 
+have done we will extend the dataset size 
+by using Copy and Paste pipeline.
+The special of our implementation is that instead of 
+chosing a number of random objects in a random image and copy-paste it
+multiple times in random locations with the same image,
+we will use the score to change the probability of selecting an object 
+and a image to copy and paste.
+
+Under our \emph{score-guided copy-paste}, the probablity to choose and 
+an ojbect and a background image are sampled
+proportionally to their difficulty score via exponential
+weighting---objects with high $S_{\mathrm{obj}}$ are drawn
+more frequently, deliberately concentrating augmentation effort on
+instances the baseline model most consistently fails to detect or
+localize.
+This new data then used to retrain a fresh YOLOv8s model
+under identical hyperparameters, ensuring that any performance
+difference is attributable to selection strategy alone.
+
+% ----------------------------------------------------------
+\section{Score Validation}
+\label{sec:validation}
+
+\subsection{Correlation with Detection Failures}
+
+We can see in Table~\ref{tab:corr} that
+all correlations are strongly positive, confirming
+that the score reliably captures image-level difficulty.
+
+\begin{table}[t]
+\centering
+\caption{Pearson correlation of $S_{\mathrm{img}}$ with per-image Miss rate and False
+Positive rate}
+\label{tab:corr}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Dataset}
+  & $r$(\,score,\,miss\,)
+  & $r$(\,score,\,FP\,)
+\\
+\midrule
+MinneApple  & 0.698 & 0.688 \\
+GWHD        & 0.816 & 0.818 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\subsection{Domain and Size-Level Validity}
+
+% The author of \cite{hani2020minneapple} identify
+% small objects as the primary failure mode of MinneApple, while
+% the author from \cite{david2021global} identify cross-domain visual
+% shift as the defining challenge of GWHD.
+% We test whether MIS recovers these patterns without access to
+% any other information.
+
+\noindent\textbf{Domain-level (GWHD).}
+Table~\ref{tab:domain} show that the harder domains (lower AP) 
+have higher Mean $S_{\mathrm{img}}$.
+This indiate a strong relation between our scoring with GWHD failed mode.
+
+
+\noindent\textbf{Size-level (MinneApple).}
+Table~\ref{tab:size_score} shows that $S_{\mathrm{obj}}$ is
+ higher for small objects than medium objects, which mean
+our scoring has correctly
+matched the known ap between these size categories.
+
+Together, these results demonstrate that \textbf{MIS} can 
+indentify the primary structural difficulty at both
+domain and object-size granularity---using only training-set
+model failure signals.
+
+\begin{table}[t]
+\centering
+\caption{Correlation of mean $S_{\mathrm{img}}$ and Average Precision across GWHD domains}
+\label{tab:domain}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{@{}lcc@{}}
+\toprule
+\textbf{Domain}  & \textbf{AP}
+  & \textbf{Mean} \boldmath{$S_{\mathrm{img}}$} \\
+\midrule
+rres\_1   & 0.572  & 0.200 \\
+ethz\_1   & 0.550  & 0.227 \\
+inrae\_1  & 0.523 & 0.251 \\
+arvalis\_3 & 0.466 & 0.294 \\
+usask\_1   & 0.408  & 0.312 \\
+arvalis\_1 & 0.403 & 0.331 \\
+arvalis\_2 & 0.365  & 0.424 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{Correlation of Object Difficulty Score $S_{\mathrm{obj}}$ with object size on MinneApple.
+\label{tab:size_score}}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Dataset}
+  & \textbf{Score Type}
+  & \textbf{Small object (\boldmath{$\le$}32\,px\textbf)}
+  & \textbf{Medium Object (\boldmath{$\le$}96\,px\textbf)} \\
+\midrule
+\multirow{2}{*}{MinneApple}
+  & AP Score                        & 0.300 & 0.592  \\
+  & Object Difficulty Score         & 0.378 & 0.222 \\
+
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+
+
+% ----------------------------------------------------------
+\section{Augmentation Experiments}
+
+\subsection{Setup}
+
+We use YOLOv8s initialized from COCO pretrained weights.
+We will use copy and paste augmentation to increase the dataset size by 30\%.
+For each new image, 2--8 new objects are chosen to be pasted, applied
+Scale jitter, random flipping following
+Ghiasi~et~al.~\cite{ghiasi2021simple}.
+The only difference between the two experimental conditions is
+whether source objects are sampled uniformly (\textit{Random CP})
+or proportionally to $S_{\mathrm{obj}}$ (\textit{Score CP}).
+
+\subsection{Results}
+
+\noindent\textbf{MinneApple.} Table~\ref{tab:ap} show that Score-guided 
+copy-paste outperforms random selection across 
+sub-metrics, confirming that
+difficulty-weighted sampling directs augmentation toward
+higher-signal objects.
+However, both conditions fall below baseline indicates degraded
+localization precision from pasting  objects without boundary
+blending.  The AP$_S$ drop we believe reflects that score-selected
+objects are predominantly sub-resolution and cannot be made more
+learnable through repetition alone---a constraint imposed by the
+dataset itself, not by the selection strategy.
+% Backbone feature analysis (YOLOv8s P4, UMAP) confirms that
+% augmented images are displaced from the test distribution,
+% directly explaining the performance degradation.
+
+
+\noindent\textbf{GWHD.}
+Score-guided and random conditions are statistically
+indistinguishable and both fall below baseline.
+Score-guided sampling concentrates objects from domain-minority
+sources, amplifying existing domain imbalance
+rather than correcting it.
+Feature-space analysis confirms that GWHD augmented images suffer
+great distributional displacement, consistent with
+the larger performance gap.
+This we believe indicated that a domain-shifted dataset, 
+selection quality is irrelevant if
+the fundamental problem is covariate shift between augmented and
+test images.
+
+\begin{table}[t]
+\centering
+\caption{Three-seed mean COCO AP. \textbf{Bold} = best
+  copy-paste condition per dataset. All copy-paste conditions
+  fall below baseline, indicating distributional shift
+  outweighs selection benefit.}
+\label{tab:ap}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{@{}llrrrrr@{}}
+\toprule
+\textbf{Dataset} & \textbf{Condition}
+  & \textbf{AP}
+  & \textbf{AP\textsubscript{50}}
+  & \textbf{AP\textsubscript{75}}
+  & \textbf{AP\textsubscript{S}}
+  & \textbf{AP\textsubscript{M}} \\
+\midrule
+\multirow{3}{*}{MinneApple}
+  & Baseline          & 0.439 & 0.771 & 0.452 & 0.300 & 0.592 \\
+  & Random CP         & 0.415 & 0.741 & 0.427 & 0.279 & 0.563 \\
+  & \textbf{Score CP} & \textbf{0.428} & \textbf{0.759}
+                      & \textbf{0.440} & \textbf{0.286}
+                      & \textbf{0.581} \\
+\midrule
+\multirow{3}{*}{GWHD}
+  & Baseline          & 0.507 & 0.922 & 0.491 & 0.136 & 0.501 \\
+  & Random CP         & 0.486 & 0.905 & 0.456 & 0.118 & 0.480 \\
+  & \textbf{Score CP} & \textbf{0.484} & \textbf{0.905}
+                      & \textbf{0.455} & \textbf{0.098}
+                      & \textbf{0.477} \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+% ----------------------------------------------------------
+\section{Conclusion}
+
+MinImageScorer reliably quantifies per-object detection difficulty
+from model failure signals.
+
+Score-guided copy-paste outperforms random selection on MinneApple
+,confirming that difficulty-weighted sampling improves
+selection quality.
+Nevertheless, both strategies fall below baseline on both datasets
+because the root failure modes---sub-resolution scale limits on
+MinneApple and cross-domain distributional shift on GWHD---are
+structural constraints that copy-paste cannot overcome when
+augmented images are displaced from the test distribution,
+as confirmed by backbone feature-space analysis.
+
+The practical implication is precise: copy-paste is beneficial
+when objects are underrepresented but visually compatible with the
+test distribution; it is harmful when the failure mode is
+structural (resolution limits or domain shift).
+MIS provides a diagnostic criterion before augmentation: inspect
+the size and domain distribution of high-score objects.
+If they cluster in a regime the model cannot resolve regardless
+of training exposure, copy-paste will not help.
+
+Future work should explore two directions.
+\textit{Better blending system}---Better blending method 
+that can blend the boundary of the pasted object with the background
+image to make the augmented image more natural and reduce the distributional shift.
+\textit{Dynamic scoring}---recomputing object difficulty during
+training rather than fixing scores upfront---would allow
+augmentation to adapt as the model improves, avoiding continued
+emphasis on objects that become learnable mid-training.
+Both directions aim to keep augmented images within the test
+distribution, addressing the core failure mode this work identifies.
+
+% ----------------------------------------------------------
+\begin{thebibliography}{00}
+
+\bibitem{hani2020minneapple}
+N.~Hani, P.~Roy, and B.~Bhanu,
+``MinneApple: A Benchmark Dataset for Apple Detection and
+Segmentation,''
+\textit{IEEE Robotics and Automation Letters},
+vol.~5, no.~2, pp.~852--858, 2020.
+
+\bibitem{david2021global}
+E.~David \textit{et~al.},
+``Global Wheat Head Detection (GWHD) Dataset,''
+\textit{Plant Phenomics}, vol.~2021, 2021.
+
+\bibitem{kisantal2019augmentation}
+M.~Kisantal \textit{et~al.},
+``Augmentation for Small Object Detection,''
+in \textit{Proc.\ ICACCI}, 2019.
+
+\bibitem{ghiasi2021simple}
+G.~Ghiasi \textit{et~al.},
+``Simple Copy-Paste is a Strong Data Augmentation Method
+for Instance Segmentation,''
+in \textit{Proc.\ IEEE/CVF CVPR}, pp.~2918--2928, 2021.
+
+\end{thebibliography}
+
+\end{document}

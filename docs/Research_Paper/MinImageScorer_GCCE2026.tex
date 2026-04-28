@@ -1,0 +1,400 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{microtype}
+
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+\begin{document}
+
+\title{MinImageScorer: Error-Driven Difficulty Scoring\\
+for Guided Copy-Paste Augmentation in\\
+Agricultural Object Detection}
+
+% TODO: Fill in author/supervisor/affiliation
+\author{
+\IEEEauthorblockN{Author Name\textsuperscript{1},
+                  Supervisor Name\textsuperscript{1}}
+\IEEEauthorblockA{%
+\textsuperscript{1}Department of XXX, University of XXX, Country\\
+email@university.edu}
+}
+
+\maketitle
+
+% ----------------------------------------------------------
+\begin{abstract}
+Copy-paste augmentation is widely applied to improve segmentation result
+but it  
+but is rarely evaluated against the specific failure mode a dataset
+exhibits. We propose \textbf{MinImageScorer}, an error-driven framework
+that scores per-object detection difficulty from baseline model failures
+using a cost function combining prediction confidence and spatial
+accuracy. We validate the score on two agricultural
+benchmarks---MinneApple, Global Wheat Head (GWHD)---and use it to
+guide copy-paste augmentation. Experiments across three random seeds
+show that score-guided selection outperforms random selection on
+MinneApple ($\Delta\mathrm{AP}{=}{+}0.013$) but neither condition
+recovers the no-augmentation baseline. Feature-space analysis confirms
+that augmented images shift the training distribution away from the
+test distribution, explaining the consistent degradation. On GWHD,
+domain shift dominates and copy-paste provides no benefit under either
+selection strategy. Our findings establish that the utility of
+copy-paste augmentation depends on the dataset's underlying failure
+mode, and that MinImageScorer correctly identifies the objects
+responsible for that failure.
+\end{abstract}
+
+\begin{IEEEkeywords}
+object detection, copy-paste augmentation, difficulty scoring,
+agricultural detection, small objects, domain shift
+\end{IEEEkeywords}
+
+% ----------------------------------------------------------
+\section{Introduction}
+
+Agricultural object detection benchmarks such as
+MinneApple~\cite{hani2020minneapple} and Global Wheat Head
+(GWHD)~\cite{david2021global} present distinct structural failure
+modes. MinneApple is dominated by high-density small objects near the
+resolution floor of standard backbones, while GWHD contains images
+from multiple geographic sources with significant cross-domain visual
+variation. These failure modes differ fundamentally from the object
+\textit{underrepresentation} problem that Kisantal
+\textit{et~al.}~\cite{kisantal2019augmentation} addressed on MS COCO,
+where copy-paste augmentation produced measurable gains by increasing
+small-object anchor matches during training. Ghiasi
+\textit{et~al.}~\cite{ghiasi2021simple} further established
+large-scale copy-paste as a general augmentation strategy for instance
+segmentation, but likewise evaluated it on datasets without structural
+resolution or domain-shift limitations.
+
+A critical gap remains: practitioners routinely apply copy-paste
+augmentation without first diagnosing whether the dataset's failure
+mode is addressable by adding more object instances. When the failure
+is structural---resolution-limited detectability or cross-domain
+shift---copy-paste may corrupt the training distribution rather than
+improve it. No prior work provides an empirical framework to diagnose
+this mismatch before augmentation is applied.
+
+We make the following contributions:
+\begin{enumerate}
+    \item \textbf{MinImageScorer}: a per-object difficulty score
+    derived from model failure signals, with weights auto-calibrated
+    via Pearson correlation optimization, requiring no domain-specific
+    assumptions.
+    \item \textbf{Empirical validation} that the score captures
+    dataset-specific failure modes on both MinneApple and GWHD.
+    \item \textbf{Controlled augmentation analysis} comparing
+    score-guided and random copy-paste across three seeds, with
+    feature-space analysis explaining the observed performance
+    patterns.
+\end{enumerate}
+
+% ----------------------------------------------------------
+\section{Methodology}
+
+\subsection{MinImageScorer: Formulation}
+
+Let $G(I)$ denote the ground-truth objects in image $I$ and
+$\mathcal{P}$ the set of model predictions. For object $g$, let
+$\mathcal{P}(g;\tau)$ be the predictions satisfying
+$\mathrm{IoU}(p,g)\ge\tau$. The \emph{object difficulty score} is
+defined as:
+
+\begin{equation}
+S_{\mathrm{obj}}(g) =
+\begin{cases}
+\displaystyle\min_{p\,\in\,\mathcal{P}(g;\tau)}
+  \bigl[
+    \alpha\,(1 - \mathrm{conf}(p))
+    + \beta\,(1 - \mathrm{IoU}(p,g))
+  \bigr],
+  & \text{if } \mathcal{P}(g;\tau) \neq \varnothing, \\[6pt]
+\alpha + \beta,
+  & \text{otherwise.}
+\end{cases}
+\label{eq:obj_score}
+\end{equation}
+
+Missed detections receive the maximum penalty $\alpha + \beta$.
+The \emph{image-level score} aggregates object difficulties and
+penalizes false positives:
+
+\begin{equation}
+S_{\mathrm{img}}(I) =
+  w_1 \cdot \frac{1}{|G(I)|} \sum_{g \in G(I)} S_{\mathrm{obj}}(g)
+  \;+\; w_2 \cdot \mathrm{FPrate}(I;\,\gamma,\tau).
+\label{eq:img_score}
+\end{equation}
+
+Weights $\alpha,\beta,w_1,w_2$ are calibrated by maximizing the
+Pearson correlation between score distributions and per-image miss
+rate and false-positive rate on the training set. This data-driven
+calibration requires no domain-specific tuning.
+
+\subsection{Score-Guided Copy-Paste Pipeline}
+
+The pipeline proceeds in five steps:
+(1)~train a baseline YOLOv8s~\cite{yolov8} on the original training
+set with all built-in augmentations disabled;
+(2)~run inference on the training set to collect per-prediction
+confidence and IoU signals;
+(3)~compute $S_{\mathrm{obj}}$ and $S_{\mathrm{img}}$ for all objects
+and images;
+(4)~sample objects proportionally to their scores using exponential
+weighting ($\alpha{=}2$) for score-guided, or uniformly for random
+selection; and
+(5)~paste 2--8 objects per augmented image within the source image
+(same-image pasting), then retrain from COCO pretrained weights on
+the augmented set.
+Both conditions are identical in all parameters except the selection
+policy, ensuring a controlled comparison.
+
+% ----------------------------------------------------------
+\section{Experiments}
+
+\subsection{Setup}
+
+\textbf{Datasets.}
+MinneApple~\cite{hani2020minneapple} contains
+% ============================================================
+% [FILL] Insert actual train/val/test image counts and total
+%        object instance counts. Example format:
+%        670 training, 67 validation, and 67 test images,
+%        with 41,204 annotated apple instances.
+% ============================================================
+[FILL: N\textsubscript{train}/N\textsubscript{val}/N\textsubscript{test}]
+images of apple trees with dense small-object annotations.
+GWHD~\cite{david2021global} contains
+% ============================================================
+% [FILL] Insert GWHD train/val/test counts and domain count.
+% ============================================================
+[FILL: N\textsubscript{train}/N\textsubscript{val}/N\textsubscript{test}]
+images of wheat fields collected across multiple geographic domains
+(Australia, Japan, India, and others), making it a multi-domain
+benchmark.
+
+\textbf{Model and training.}
+All models use YOLOv8s~\cite{yolov8} initialized from COCO pretrained
+weights. Training settings: MinneApple 200 epochs / patience 10;
+GWHD 100 epochs / patience 8; batch size 16; input size
+$1024{\times}1024$; learning rate $10^{-2}$. All Ultralytics
+built-in augmentations (mosaic, mixup, HSV jitter, flips) are
+disabled to isolate the effect of copy-paste.
+
+\textbf{Augmentation parameters.}
+Dataset augmentation ratio 0.3; scale jitter $[0.9,\,1.1]$
+(MinneApple) and $[0.8,\,1.2]$ (GWHD); no rotation; overlap
+avoidance with 5\,px margin; no alpha blending.
+Results are reported as means over seeds $\{123,456,789\}$.
+
+\subsection{Results}
+
+Table~\ref{tab:results} reports 3-seed mean COCO AP on original test
+sets for both datasets.
+
+\begin{table}[t]
+\centering
+\caption{Three-seed mean COCO AP on original test sets.
+  \textbf{Bold} = best copy-paste condition per dataset.}
+\label{tab:results}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{@{}llrrrrr@{}}
+\toprule
+\textbf{Dataset} & \textbf{Condition}
+  & \textbf{AP}
+  & \textbf{AP\textsubscript{50}}
+  & \textbf{AP\textsubscript{75}}
+  & \textbf{AP\textsubscript{S}}
+  & \textbf{AP\textsubscript{M}} \\
+\midrule
+\multirow{3}{*}{MinneApple}
+  & Baseline          & 0.439 & 0.771 & 0.452 & 0.300 & 0.592 \\
+  & Random CP         & 0.415 & 0.741 & 0.427 & 0.279 & 0.563 \\
+  & \textbf{Score CP} & \textbf{0.428} & \textbf{0.759}
+                      & \textbf{0.440} & \textbf{0.286} & \textbf{0.581} \\
+\midrule
+\multirow{3}{*}{GWHD}
+  & Baseline          & 0.507 & 0.922 & 0.491 & 0.136 & 0.501 \\
+  & Random CP         & 0.486 & 0.905 & 0.456 & 0.118 & 0.480 \\
+  & \textbf{Score CP} & \textbf{0.484} & \textbf{0.905}
+                      & \textbf{0.455} & \textbf{0.098} & \textbf{0.477} \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+On MinneApple, score-guided copy-paste outperforms random copy-paste
+by $\Delta\mathrm{AP}{=}{+}0.013$, with consistent gains across
+AP, AP$_{50}$, AP$_{75}$, AP$_S$, and AP$_M$. This indicates
+the score successfully directs augmentation toward harder, smaller
+objects that provide greater gradient signal. However, both copy-paste
+conditions remain below baseline ($-0.024$ for Score CP), showing
+that the distributional cost of pasting outweighs the selective
+benefit on this dataset.
+
+On GWHD, score-guided and random selection are
+statistically indistinguishable (gap: $-0.002$~AP), and both degrade
+below baseline ($-0.023$). Notably, on AP$_S$ the score-guided
+condition is worse than random ($0.098$ vs.\ $0.118$), because
+score-guided sampling concentrates pasted objects from
+domain-minority sources (predominantly \textit{arvalis}), amplifying
+the existing domain imbalance rather than correcting it.
+
+\subsection{Feature-Space Analysis}
+
+\begin{figure}[t]
+\centering
+% ============================================================
+% [FILL] Replace the placeholder below with your actual figure.
+% Recommended: export UMAP figure as feature_space_combined.pdf
+% or .png, then uncomment and update the includegraphics line.
+% ============================================================
+% \includegraphics[width=\columnwidth]{feature_space_combined.pdf}
+\framebox{\parbox{0.9\columnwidth}{\centering\vspace{1.8cm}
+\small FIGURE PLACEHOLDER:\\
+Image-level UMAP projections for MinneApple (left)\\
+and GWHD (right). Groups: original train, augmented\\
+(random CP), augmented (score CP), and test images.
+\vspace{1.8cm}}}
+\caption{Image-level backbone feature projections (YOLOv8s P4 layer,
+  global average pool, UMAP). Augmented images occupy regions
+  displaced from the test distribution relative to original training
+  images on both datasets. Score-guided augmented images show greater
+  displacement on GWHD due to domain-minority object concentration.}
+\label{fig:feature_space}
+\end{figure}
+
+Fig.~\ref{fig:feature_space} shows image-level backbone embeddings
+(YOLOv8s P4, global average pool, UMAP projection) for four groups:
+original training images, random-CP augmented images, score-CP
+augmented images, and test images.
+
+On both datasets, augmented images occupy a region of feature space
+displaced from the test distribution relative to the original training
+images. Quantitatively, the centroid distance from augmented images to
+the test set exceeds that of the original training images:
+% ============================================================
+% [FILL] Replace placeholders with actual centroid distances.
+% Example: "MinneApple: 1.83 (Score CP) vs. 1.21 (original train);
+%           GWHD: 2.14 (Score CP) vs. 1.56 (original train)."
+% ============================================================
+MinneApple: \textit{[value]} (Score~CP) vs.\ \textit{[value]}
+(original train);
+GWHD: \textit{[value]} (Score~CP) vs.\ \textit{[value]}
+(original train).
+On GWHD, score-guided augmented images show greater displacement than
+random augmented images, consistent with domain-minority concentration.
+This distributional shift directly explains the consistent performance
+degradation observed in Table~\ref{tab:results}.
+
+% ----------------------------------------------------------
+\section{Discussion}
+
+\textbf{Why copy-paste fails on these datasets.}
+Kisantal~\textit{et~al.}~\cite{kisantal2019augmentation} demonstrated
+that copy-paste improves AP$_S$ on MS COCO by increasing anchor
+coverage for underrepresented small objects. This benefit presupposes
+that (1) hard objects are above the backbone feature resolution floor,
+and (2) pasted objects share the same visual domain as the target
+scene. Neither condition holds reliably here. On MinneApple, the
+hardest objects identified by MinImageScorer are predominantly
+at or below the resolution limit of the backbone, making them weakly
+represented in feature maps regardless of paste frequency. On GWHD,
+even within-image pasting fails because the feature-space mismatch
+originates at the image level. These structural limitations were not
+present in the COCO setting studied by either Kisantal
+\textit{et~al.}~\cite{kisantal2019augmentation} or Ghiasi
+\textit{et~al.}~\cite{ghiasi2021simple}.
+
+\textbf{Diagnostic value of the score.}
+Despite producing no absolute improvement, MinImageScorer demonstrates
+clear diagnostic utility: the score correlates with per-image miss
+rate
+% ============================================================
+% [FILL] Insert Pearson r values from your calibration analysis.
+% Example: "r = 0.71 on MinneApple, r = 0.58 on GWHD"
+% ============================================================
+($r{=}[\text{value}]$ on MinneApple, $r{=}[\text{value}]$ on GWHD),
+and on MinneApple it selects objects that yield a $+0.013$~AP
+relative gain over uniform random selection. The score identifies the
+right objects; the limitation is that copy-paste cannot make those
+objects more learnable when the failure mode is structural.
+
+\textbf{Boundary condition for practitioners.}
+Score-guided copy-paste provides a positive relative benefit when
+selected objects are above the resolution floor and within-distribution
+with the target scene. It provides no benefit when the failure mode
+is domain shift, and it amplifies AP$_S$ degradation when selected
+objects are sub-resolution. A practical diagnostic criterion follows:
+run MinImageScorer, inspect the size and domain distribution of
+high-score objects, and apply copy-paste augmentation only when
+those objects satisfy both conditions above.
+
+% ----------------------------------------------------------
+\section{Conclusion}
+
+We proposed MinImageScorer, a model-failure-driven difficulty scoring
+framework validated on two agricultural detection benchmarks.
+Controlled experiments show that score-guided copy-paste outperforms
+random copy-paste on MinneApple ($+0.013$~AP) but both strategies
+degrade below baseline, with the degradation confirmed by
+feature-space analysis to originate from distributional shift
+between augmented training images and the test set.
+On GWHD, domain shift makes copy-paste ineffective under any
+selection strategy.
+
+The practical implication is that copy-paste augmentation should be
+preceded by failure-mode diagnosis: it is effective for
+underrepresentation (COCO-like datasets) but not for
+resolution-limited or domain-shifted datasets. Future work includes
+online augmentation to reduce distributional rigidity, and
+domain-constrained pasting for multi-source benchmarks.
+
+% ----------------------------------------------------------
+\begin{thebibliography}{00}
+
+\bibitem{hani2020minneapple}
+N.~Hani, P.~Roy, and B.~Bhanu,
+``MinneApple: A Benchmark Dataset for Apple Detection and
+Segmentation,''
+\textit{IEEE Robotics and Automation Letters},
+vol.~5, no.~2, pp.~852--858, 2020.
+
+\bibitem{david2021global}
+E.~David \textit{et~al.},
+``Global Wheat Head Detection (GWHD) Dataset,''
+\textit{Plant Phenomics}, vol.~2021, 2021.
+
+\bibitem{kisantal2019augmentation}
+M.~Kisantal \textit{et~al.},
+``Augmentation for Small Object Detection,''
+in \textit{Proc. 9th Int. Conf. Advances in Computing,
+Communication and Informatics (ICACCI)}, 2019.
+
+\bibitem{ghiasi2021simple}
+G.~Ghiasi \textit{et~al.},
+``Simple Copy-Paste is a Strong Data Augmentation Method
+for Instance Segmentation,''
+in \textit{Proc. IEEE/CVF Conf. Computer Vision and Pattern
+Recognition (CVPR)}, pp.~2918--2928, 2021.
+
+% ============================================================
+% [OPTIONAL] Additional references to consider:
+% - R. Dufumier et al., GWHD challenge paper (if citing challenge)
+% - T.-Y. Lin et al., Focal Loss / RetinaNet (ICCV 2017)
+% - A. Shrivastava et al., OHEM (CVPR 2016)
+% ============================================================
+
+\end{thebibliography}
+
+\end{document}

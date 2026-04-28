@@ -1,0 +1,3 @@
+\begin{abstract}
+This report examines why copy-paste augmentation reduced detector performance on MinneApple and Global Wheat Head. We compare random and score-guided copy-paste, validate the scoring signal against miss and false-positive behavior, and inspect the resulting feature space with frozen YOLOv8s embeddings. Across both datasets, the augmentation policies move the training distribution but do not move it closer to the test set in a way that improves generalization. The evidence supports a simple conclusion: harder-looking samples are not automatically better training samples, and score guidance alone is not enough to make copy-paste safe.
+\end{abstract}

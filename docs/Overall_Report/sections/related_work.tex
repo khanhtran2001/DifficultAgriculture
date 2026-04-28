@@ -1,0 +1,13 @@
+\section{Related Work}
+
+\subsection{Copy-Paste Augmentation}
+Copy-paste augmentation is usually used to increase instance count and improve exposure to rare objects. Prior work shows that it can help when pasted objects remain plausible in context, but it becomes unreliable when object placement or scene composition breaks the underlying data distribution.
+
+\subsection{Hard-Sample Mining}
+Score-based sampling and hard-example mining are attractive because they target the examples the model currently struggles with. The risk is that difficulty is a training signal, not a guarantee of usefulness, so the selected samples may over-emphasize atypical or noisy cases.
+
+\subsection{Domain Shift in Detection}
+Object detectors are sensitive to background, scale, overlap, and scene statistics. If augmentation changes those factors too aggressively, the model can fit the training mixture while moving away from the evaluation domain.
+
+\subsection{Feature-Space Diagnosis}
+Feature-space analysis is a useful sanity check when metrics alone are ambiguous. Image embeddings from a frozen backbone can show whether augmented samples stay near the source manifold, collapse into a narrow region, or move farther from test than the original data.

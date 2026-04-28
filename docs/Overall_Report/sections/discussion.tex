@@ -1,0 +1,16 @@
+\section{Discussion}
+
+\subsection{Why the Score Helps and Still Fails}
+The score does capture a real notion of difficulty, but difficulty alone is too blunt. A hard object can still be a bad training target if it is poorly placed, highly occluded, duplicated too often, or drawn from a scene that does not resemble the test distribution.
+
+\subsection{MinneApple vs Global Wheat Head}
+MinneApple is less pathological because same-image copy-paste stays within the same scene family. Even there, however, the augmentation does not improve the original test result. Global Wheat Head is harder because cross-image pasting mixes domains and makes the distribution shift more visible.
+
+\subsection{Boundary Conditions}
+The current pipeline works only inside a narrow band of settings. If the augmentation ratio is too high, if alpha is too aggressive, or if object reuse is too frequent, the pasted samples start to dominate the training mixture and the model learns a distribution that is too far from the test set.
+
+\subsection{Practical Recommendation}
+The safest conclusion is not to reject copy-paste entirely, but to treat it as a constrained intervention. The policy should be kept conservative, validated with the original test split, and checked with feature-space diagnostics before it is trusted as a training improvement.
+
+\subsection{Limitation}
+The current analysis is image-centric and backbone-centric. It is good enough to explain the broad failure mode, but it does not fully isolate whether the dominant problem is object placement, context mismatch, or scoring bias.

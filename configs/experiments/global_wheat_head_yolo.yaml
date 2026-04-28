@@ -65,9 +65,9 @@ baseline_config:
     #   hsv_v: 0.4        # Image HSV-Value/Brightness augmentation (fraction)
 
     #   # Geometric (Spatial Variance - tuned to protect small bounding boxes)
-    #   degrees: 10.0     # Image rotation (+/- deg). Kept small to prevent bbox distortion.
+    #   degrees: 180.0     # Image rotation (+/- deg). Kept small to prevent bbox distortion.
     #   translate: 0.1    # Image translation (+/- fraction).
-    #   scale: 0.4        # Image scale (+/- gain). Reduced from default 0.5 to prevent shrinking objects too much.
+    #   scale: 0.5        # Image scale (+/- gain). Reduced from default 0.5 to prevent shrinking objects too much.
     #   shear: 0.0        # Image shear (+/- deg). Kept at 0 as it severely distorts tight bboxes.
     #   perspective: 0.0  # Image perspective (+/- fraction). Kept at 0.
 
@@ -76,7 +76,7 @@ baseline_config:
     #   flipud: 0.0       # Image flip up-down (probability). Set to 0.5 ONLY for top-down datasets like Wheat. Keep 0.0 for MinneApple.
 
     #   # Ultralytics augmentation controls disabled
-    #   mosaic: 0.0
+    #   mosaic: 1.0
     #   mixup: 0.0
     #   copy_paste: 0.0
     #   cutmix: 0.0
@@ -116,10 +116,10 @@ augmentation_config:
   # Score weighting for score-guided selection: linear | exponential
   # alpha controls how strongly high-score samples are preferred.
   score_weight_function: linear 
-  score_alpha: 1
+  score_alpha: 3.0
   
   # Number of generated augmented images = int(num_train_images * dataset_ratio)
-  dataset_ratio: 0.5
+  dataset_ratio: 0.3
   
   # Number of objects to paste per augmented image (uniform random in [min, max])
   min_objects_per_image: 2
@@ -132,17 +132,17 @@ augmentation_config:
   selection_seed: 123
   
   # Reuse caps (null/None disables cap)
-  max_image_reuse: 1
-  max_object_reuse: 1
+  max_image_reuse: 3
+  max_object_reuse: 3
 
   # Minimum source object area (in pixel^2) to be eligible for copy-paste.
   # Example: 32x32 => 1024. Objects smaller than this are excluded from the pool.
-  min_object_area_px: 500 
+  min_object_area_px: 000 
   
   # Transform parameters
   scale_min: 0.8
   scale_max: 1.2
-  rotation_deg_max: 30.0
+  rotation_deg_max: 0.0
 
   # Placement behavior for copy-paste objects
   avoid_overlap: true

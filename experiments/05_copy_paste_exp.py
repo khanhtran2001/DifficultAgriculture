@@ -81,7 +81,7 @@ def run_experiment(config_path: str):
     # Train baseline model using dataset properties
     train_result_dir = step_2_dir / "train_results"
     baseline_model = Baseline(baseline_model_config)
-    best_weight_path = f"/home/khanh/Projects/DifficultyAgri/.cache_result/no_trad_aug/minneapple/baseline/seed_123/best.pt" 
+    best_weight_path = f"/home/khanh/Projects/DifficultyAgri/.cache_result/with_trad_aug/minneapple/baseline/seed_123/best.pt" 
     # best_weight_path = f"/home/khanh/Projects/DifficultyAgri/.cache_result/no_trad_aug/gwhd/baseline/seed_123/best.pt"
     # Evaluate on test set and save returned typed results
     evaluation_results = baseline_model.custom_evaluate_on_test_set(best_weight_path, initial_dataset_properties)

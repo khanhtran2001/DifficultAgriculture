@@ -1,0 +1,27 @@
+\section{Experimental Setup}
+
+\subsection{Datasets}
+The experiments use MinneApple and Global Wheat Head in YOLO format. The train/val/test splits are fixed, and all reported test metrics are computed on the original test split rather than on augmented data.
+
+\subsection{Split Summary}
+\begin{center}
+\small
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+\textbf{Dataset} & \textbf{Split} & \textbf{Images} & \textbf{Objects} & \textbf{Notes} \\
+\midrule
+MinneApple & Train & 536 & 22,815 & 73.61\% small, 26.39\% medium \\
+MinneApple & Val & 134 & 5,367 & Same annotation format as train \\
+MinneApple & Test & 331 & 12,285 & Held out for final evaluation \\
+Global Wheat Head & Train & 2,700 & 115,777 & Dense, overlapping heads \\
+Global Wheat Head & Val & 337 & 14,622 & Different image domains \\
+Global Wheat Head & Test & 339 & 15,012 & Held out for final evaluation \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Model and Training}
+All detector runs use YOLOv8s with COCO-pretrained weights. Augmentation is disabled during detector training so that the effect of the copy-paste pipeline remains visible, and the model is trained for 100 epochs with early stopping where applicable.
+
+\subsection{Evaluation Protocol}
+Every comparison is evaluated on the original test set. The report tracks COCO AP, AP50, AP75, and size-specific AP where available. For the feature-space analysis, embeddings are computed from a frozen backbone so that the geometry reflects sample structure rather than detector adaptation.

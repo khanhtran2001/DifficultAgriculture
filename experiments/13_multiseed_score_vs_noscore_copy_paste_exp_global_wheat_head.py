@@ -20,7 +20,7 @@ from dagri.augmentation import CopyPasteAugmentor
 import experiments.utils as exputils
 
 
-RESULTS_DIR = Path(f"results/{Path(__file__).stem}")
+RESULTS_DIR = Path(f"results/{Path(__file__)}_with_args_no_min_object_area")
 CONFIG_DIR = Path("/home/khanh/Projects/DifficultyAgri/configs/experiments/global_wheat_head_yolo.yaml")
 CACHE_ROOT = Path("/home/khanh/Projects/DifficultyAgri/.cache_result/no_trad_aug/gwhd")
 DEFAULT_CONDITIONS = {

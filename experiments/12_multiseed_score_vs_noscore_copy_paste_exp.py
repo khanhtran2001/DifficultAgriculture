@@ -20,9 +20,9 @@ from dagri.augmentation import CopyPasteAugmentor
 import experiments.utils as exputils
 
 
-RESULTS_DIR = Path(f"results/{Path(__file__).stem}")
+RESULTS_DIR = Path(f"results/{Path(__file__).stem}_apple_argu_no_min_object_area")
 CONFIG_DIR = Path("/home/khanh/Projects/DifficultyAgri/configs/experiments/minneapple_yolo.yaml")
-CACHE_ROOT = Path("/home/khanh/Projects/DifficultyAgri/.cache_result/no_trad_aug/minneapple")
+CACHE_ROOT = Path("/home/khanh/Projects/DifficultyAgri/.cache_result/with_trad_aug/minneapple")
 DEFAULT_CONDITIONS = {
     "with_score": True,
     "without_score": False,

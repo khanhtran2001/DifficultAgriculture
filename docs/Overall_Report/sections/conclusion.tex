@@ -1,0 +1,9 @@
+\section{Conclusion}
+
+The first conclusion is direct: copy-paste augmentation did not improve the detector on either dataset. In both MinneApple and Global Wheat Head, the augmented models stayed below the baseline on the original test set.
+
+The second conclusion is that score guidance is not a cure. It produces a meaningful hardness ranking, but hardness is not the same as usefulness. The score can select difficult objects while still pulling the model away from the test distribution.
+
+The third conclusion is that the augmentation must be constrained more aggressively if it is going to help. The current settings are conservative enough to remain plausible, but not conservative enough to guarantee better generalization.
+
+The final conclusion is practical: the report gives a reproducible explanation for the failure, and the next iteration should optimize for distribution alignment first, then difficulty second.

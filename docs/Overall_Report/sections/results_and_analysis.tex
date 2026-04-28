@@ -1,0 +1,70 @@
+\section{Results and Analysis}
+
+\subsection{Main Performance Table}
+MinneApple stays below baseline in both augmentation modes, and Global Wheat Head shows the same pattern. The exact values are below.
+
+\begin{center}
+\small
+\begin{tabular}{@{}lrrrrrr@{}}
+\toprule
+\textbf{MinneApple} & \textbf{COCO AP} & \textbf{AP50} & \textbf{AP75} & \textbf{AP$_{small}$} & \textbf{AP$_{medium}$} & \textbf{AP$_{large}$} \\
+\midrule
+Baseline & 0.4387 & 0.7708 & 0.4519 & 0.2996 & 0.5922 & 0.6449 \\
+Random copy-paste & 0.4152 & 0.7409 & 0.4273 & 0.2792 & 0.5633 & 0.6689 \\
+Score-guided copy-paste & 0.4277 & 0.7592 & 0.4405 & 0.2856 & 0.5809 & 0.6374 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{center}
+\small
+\begin{tabular}{@{}lrrrrrr@{}}
+\toprule
+\textbf{Global Wheat Head} & \textbf{COCO AP} & \textbf{AP50} & \textbf{AP75} & \textbf{AP$_{small}$} & \textbf{AP$_{medium}$} & \textbf{AP$_{large}$} \\
+\midrule
+Baseline & 0.5070 & 0.9223 & 0.4907 & 0.1365 & 0.5013 & 0.5465 \\
+With-score copy-paste & 0.4837 & 0.9045 & 0.4549 & 0.1090 & 0.4772 & 0.5370 \\
+Without-score copy-paste & 0.4857 & 0.9048 & 0.4556 & 0.1182 & 0.4796 & 0.5288 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Score Validation}
+The score is meaningful, but it is not sufficient. In MinneApple, the score correlates strongly with miss and false-positive behavior, with Pearson/Spearman values around 0.6978/0.6883 and 0.6788/0.6983. In Global Wheat Head, the same trend is stronger for some cases, with values around 0.8158/0.8180 and 0.7180/0.7157. That means the score is a valid hardness signal, but not a guarantee that the selected samples will improve test alignment.
+
+\subsection{Visual Comparison}
+The augmented-vs-base comparison below is the same style used in the notebook viewer. It is useful as a fast qualitative check because it exposes obvious placement, clutter, and context problems.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.95\textwidth,height=0.52\textheight,keepaspectratio]{augmentation_comparison_minneapple_gwhd.png}
+    \caption{Representative augmented-vs-base comparison for MinneApple and Global Wheat Head.}
+\end{figure}
+
+\subsection{Dataset Diagnostics}
+MinneApple is dominated by small apples: 16,793 small objects and 6,022 medium objects in the training split. That bias helps explain why copy-paste can increase clutter without producing a more useful target distribution. Global Wheat Head is even more sensitive because it contains 115,777 training instances spread across more heterogeneous scenes and stronger domain variation.
+
+\subsection{Feature-Space Analysis}
+The feature-space notebook confirms the same story. On MinneApple, the augmented samples stay close to the original train manifold while the test set remains separated. On Global Wheat Head, the centroid distances are 16.8058 for original train to test, 16.2602 for random augmentation to test, and 17.3665 for score-guided augmentation to test. The score-guided case is the farthest from test, which matches the performance drop.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.75\textwidth]{feature_space_gwhd_distances.png}
+    \caption{Global Wheat Head feature-space distances from the frozen YOLOv8s embedding.}
+\end{figure}
+
+\subsection{Alpha Sweep}
+The alpha sweep shows that stronger score weighting does not fix the problem. It pushes the augmented distribution harder toward difficult samples, but the test performance still degrades as alpha increases.
+
+\begin{center}
+\small
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+\textbf{Alpha} & \textbf{Baseline AP} & \textbf{Augmented AP} & \textbf{$\Delta$} \\
+\midrule
+1.0 & 0.3844 & 0.3720 & -0.0124 \\
+3.0 & 0.3844 & 0.3652 & -0.0192 \\
+5.0 & 0.3844 & 0.3619 & -0.0225 \\
+\bottomrule
+\end{tabular}
+\end{center}

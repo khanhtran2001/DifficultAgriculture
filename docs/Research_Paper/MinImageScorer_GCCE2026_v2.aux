@@ -1,0 +1,38 @@
+\relax 
+\citation{hani2020minneapple}
+\citation{david2021global}
+\citation{kisantal2019augmentation,ghiasi2021simple}
+\citation{yolov8}
+\@writefile{toc}{\contentsline {section}{\numberline {I}Introduction}{1}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {II}Methodology}{1}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {II-A}}MinImageScorer Formulation}{1}{}\protected@file@percent }
+\newlabel{eq:obj}{{1}{1}{}{equation.1}{}}
+\newlabel{eq:img}{{2}{1}{}{equation.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {II-B}}Score-Guided Copy-Paste Pipeline}{1}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Score vs.\ per-image miss rate on training images. MinneApple (Pearson $r{=}0.70$); GWHD ($r{=}0.82$, w/ trad.\ aug). Higher score correctly predicts harder images on both datasets.}}{2}{}\protected@file@percent }
+\newlabel{fig:corr}{{1}{2}{}{figure.1}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {I}{\ignorespaces Pearson correlation of $S_{\mathrm  {img}}$ with per-image miss rate and FP rate (training set, w/ traditional augmentation).}}{2}{}\protected@file@percent }
+\newlabel{tab:corr}{{I}{2}{}{table.1}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {III}Score Validation}{2}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-A}}Correlation with Model Failures}{2}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-B}}Domain- and Size-Level Validity}{2}{}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {II}{\ignorespaces GWHD domain AP vs.\ mean $S_{\mathrm  {img}}$. Domains with lower AP consistently receive higher scores (no test labels used).}}{2}{}\protected@file@percent }
+\newlabel{tab:domain}{{II}{2}{}{table.2}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {III}{\ignorespaces Three-seed mean COCO AP. \textbf  {Bold} = best copy-paste condition per dataset.}}{2}{}\protected@file@percent }
+\newlabel{tab:ap}{{III}{2}{}{table.3}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {IV}Augmentation Experiments}{2}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-A}}Setup}{2}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-B}}Results and Feature-Space Analysis}{2}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {V}Discussion}{2}{}\protected@file@percent }
+\citation{kisantal2019augmentation}
+\citation{ghiasi2021simple}
+\bibcite{hani2020minneapple}{1}
+\bibcite{david2021global}{2}
+\bibcite{kisantal2019augmentation}{3}
+\bibcite{ghiasi2021simple}{4}
+\bibcite{yolov8}{5}
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Image-level backbone feature projections (YOLOv8s P4, UMAP). Augmented images are displaced from the test distribution relative to original training images on both datasets. On GWHD, Score CP shows greater displacement than Random CP, consistent with domain-minority object concentration.}}{3}{}\protected@file@percent }
+\newlabel{fig:umap}{{2}{3}{}{figure.2}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {VI}Conclusion}{3}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{References}{3}{}\protected@file@percent }
+\gdef \@abspage@last{3}

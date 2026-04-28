@@ -1,0 +1,34 @@
+\section{Methodology}
+
+\subsection{MinImageScorer}
+The selection policy is driven by MinImageScorer, which ranks images and objects by difficulty rather than by frequency. The intent is to bias paste selection toward samples the current detector finds weak, including low-confidence detections and missed objects.
+
+\subsection{Random and Score-Guided Selection}
+Two augmentation policies are compared throughout the report. Random copy-paste samples candidate objects without any score preference, while score-guided copy-paste prefers high-scoring objects according to the scoring model. This isolates the effect of the selection rule itself.
+
+\subsection{Boundary Conditions}
+The final comparison uses the following constraints:
+\begin{center}
+\small
+\begin{tabular}{@{}p{0.28\textwidth}p{0.18\textwidth}p{0.44\textwidth}@{}}
+\toprule
+\textbf{Setting} & \textbf{Value} & \textbf{Why it matters} \\
+\midrule
+Dataset ratio & 0.3 & Keeps the augmented set large enough to matter without overwhelming the original distribution. \\
+Minimum objects/image & 2 & Avoids trivial pasted images with too little content. \\
+Maximum objects/image & 5 & Limits clutter and over-composition. \\
+Scale range & 0.8--1.2 & Keeps pasted objects close to their natural size. \\
+Rotation range & $\pm 15^\circ$ & Adds variation without making the object implausible. \\
+Overlap handling & avoid overlap = true & Prevents pasted objects from colliding with existing instances. \\
+Max object reuse & 4 & Reduces repeated copying of the same instance. \\
+Score weighting & linear & Keeps the selection rule interpretable. \\
+Alpha & 1.0 & Uses a conservative score bias rather than an aggressive one. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Analysis Pipeline}
+The report uses two analysis layers. First, it measures detector performance on the original test set using COCO-style metrics. Second, it extracts frozen YOLOv8s image embeddings from the P5 feature map, applies global average pooling, and compares the centroid distance between training, augmented, and test samples.
+
+\subsection{Why This Design}
+This setup is deliberately simple. It keeps the control logic local to the selection policy, so when performance drops it is easier to tell whether the failure comes from the augmentation rule, the pasted content, or a mismatch between the training and test distributions.
