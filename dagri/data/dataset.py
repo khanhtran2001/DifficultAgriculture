@@ -4,6 +4,8 @@ import json
 from dagri.interfaces import DatasetInterface, DatasetConfig, DatasetProperties
 from dagri.data.minneapple import MinneappleYoloDetectionDataset
 from dagri.data.wheathead import WheatHeadYoloDetectionDataset
+from dagri.data.dota import DotaYoloDetectionDataset
+from dagri.data.visdrone import VisDroneYoloDetectionDataset
 
 class CustomDataset(DatasetInterface):
     def __init__(self, dataset_config: DatasetConfig | dict) -> None:
@@ -18,6 +20,10 @@ class CustomDataset(DatasetInterface):
             self.dataset = MinneappleYoloDetectionDataset(dataset_config)
         elif dataset_name in {"wheat_head"} and dataset_config.type == "yolo_detection":
             self.dataset = WheatHeadYoloDetectionDataset(dataset_config)
+        elif dataset_name in {"dota", "dota_v2"} and dataset_config.type == "yolo_detection":
+            self.dataset = DotaYoloDetectionDataset(dataset_config)
+        elif dataset_name in {"visdrone"} and dataset_config.type == "yolo_detection":
+            self.dataset = VisDroneYoloDetectionDataset(dataset_config)
         else:
             raise ValueError(f"Unsupported dataset name: {dataset_name} or type: {dataset_config.type}   ")
 

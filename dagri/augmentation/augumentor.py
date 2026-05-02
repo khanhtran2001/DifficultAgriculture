@@ -111,6 +111,10 @@ class CopyPasteAugmentor(AugmentorInterface):
         image_extensions = self.config.get("image_extensions", [".jpg", ".jpeg", ".png"])
         selection_seed = self.config.get("selection_seed")
 
+        # New: Boundary-based selection method
+        augmentation_method = str(self.config.get("augmentation_method")).strip().lower()
+        selection_group = str(self.config.get("group")).strip().lower()
+
         rng = random.Random(int(selection_seed)) if selection_seed not in (None, "null") else random.Random()
 
         # Load images and objects
@@ -131,16 +135,19 @@ class CopyPasteAugmentor(AugmentorInterface):
 
         print(f"[Augmentor] Loaded {len(images)} images and {len(objects)} objects")
         if use_score:
-            print(f"[Augmentor] Using score-guided selection")
+            print(f"[Augmentor] Using score-guided selection (method={augmentation_method})")
         print(
             f"[Augmentor] Config: dataset_ratio={dataset_ratio}, "
             f"min_objects={min_objects_per_image}, max_objects={max_objects_per_image}"
         )
         if use_score:
-            reverse_str = " (REVERSED)" if reverse_score_guidance else ""
-            print(
-                f"[Augmentor] Score weighting: function={score_weight_function}, alpha={score_alpha}{reverse_str}"
-            )
+            if augmentation_method == "boundary":
+                print(f"[Augmentor] Boundary selection: group={selection_group}")
+            else:
+                reverse_str = " (REVERSED)" if reverse_score_guidance else ""
+                print(
+                    f"[Augmentor] Score weighting: function={score_weight_function}, alpha={score_alpha}{reverse_str}"
+                )
         if min_object_area_px > 0:
             print(f"[Augmentor] Min object area filter: {min_object_area_px:.1f} px^2")
         print(f"[Augmentor] Object source mode: {'same-image-only' if same_image_only else 'whole-pool'}")
@@ -401,6 +408,8 @@ class CopyPasteAugmentor(AugmentorInterface):
         score_alpha: float,
         reverse_score_guidance: bool,
         rng: random.Random,
+        augmentation_method: str = "score",
+        selection_group: str = "medium",
     ) -> list[ObjectData]:
         """Select objects to copy, allowing within-image repeats while enforcing reuse caps."""
         if not objects or num_to_select <= 0:
@@ -420,7 +429,13 @@ class CopyPasteAugmentor(AugmentorInterface):
             if not available:
                 break
 
-            if use_score:
+            # Apply boundary filtering if using boundary method
+            if use_score and augmentation_method == "boundary":
+                available = self._filter_by_boundary(available, selection_group)
+                if not available:
+                    break
+                picked = rng.choice(available)
+            elif use_score:
                 weights = self._scores_to_weights(
                     [obj.score for obj in available],
                     score_weight_function,
@@ -436,6 +451,48 @@ class CopyPasteAugmentor(AugmentorInterface):
             selected_counts[key] = selected_counts.get(key, 0) + 1
 
         return selected
+
+    @staticmethod
+    def _filter_by_boundary(objects: list[ObjectData], selection_group: str) -> list[ObjectData]:
+        """Filter objects into 3 groups (low, medium, high) based on difficulty scores.
+        
+        Divides objects into 3 equal-size groups when sorted by score:
+        - 'low': lowest third of objects (easier)
+        - 'medium': middle third of objects
+        - 'high': highest third of objects (harder)
+        
+        Args:
+            objects: List of ObjectData to filter
+            selection_group: One of 'low', 'medium', 'high'
+            
+        Returns:
+            List of objects in the selected group
+        """
+        if not objects:
+            return []
+        
+        group = selection_group.strip().lower()
+        if group not in {"low", "medium", "high"}:
+            group = "medium"
+        
+        # Sort by score in ascending order (low to high difficulty)
+        sorted_objects = sorted(objects, key=lambda obj: obj.score)
+        
+        # Divide into 3 groups of equal size
+        group_size = len(sorted_objects) // 3
+        remainder = len(sorted_objects) % 3
+        
+        if group == "low":
+            # Lowest third (easiest objects)
+            return sorted_objects[:group_size]
+        elif group == "high":
+            # Highest third (hardest objects)
+            return sorted_objects[-(group_size + remainder):]
+        else:  # medium
+            # Middle third
+            start = group_size
+            end = 2 * group_size + remainder
+            return sorted_objects[start:end]
 
     @staticmethod
     def _scores_to_weights(scores: list[float], function_name: str, alpha: float, reverse: bool = False) -> list[float]:

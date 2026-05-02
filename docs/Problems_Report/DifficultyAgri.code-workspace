@@ -5,5 +5,7 @@
 			"path": "../.."
 		}
 	],
-	"settings": {}
+	"settings": {
+		"latex-workshop.formatting.latexindent.path": "pdflatex"
+	}
 }

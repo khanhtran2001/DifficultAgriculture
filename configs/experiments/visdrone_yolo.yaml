@@ -1,0 +1,128 @@
+# Configuration for training a YOLOv8m model on the VisDrone dataset.
+# VisDrone is a large-scale benchmark for object detection in drone-captured images.
+# Contains 10 object classes with high variation in scale and appearance.
+
+# General configuration
+general:
+  random_seed: [123, 456, 789]  # List of random seeds for reproducibility
+
+
+# Dataset configuration
+dataset_config:
+  name: visdrone
+  type: "yolo_detection"
+  root_dir: /home/khanh/Projects/DifficultyAgri/datasets/VisDrone/yolo_format/visdrone_yolo
+  train_mask_dir: null
+  num_classes: 10
+  class_names:
+    - "pedestrian"
+    - "person"
+    - "car"
+    - "van"
+    - "truck"
+    - "tricycle"
+    - "awning-tricycle"
+    - "bus"
+    - "motor"
+    - "bicycle"
+
+
+# Model configuration
+baseline_config:
+
+  # Model overview and structure
+  name: yolov8m
+  model_type: "yolo"
+  pretrained_weights_path: "/home/khanh/Projects/DifficultyAgri/finetuned_baseline_model/yolov8m.pt"
+
+  # Training parameters
+  training_config:
+    epochs: 200
+    batch_size: 16
+    input_size: 640
+    learning_rate: 0.01
+    early_stopping_patience: 10
+    seed: 123
+
+  # Augmentation parameters disabled for baseline training
+    augmentation:
+      hsv_h: 0.0
+      hsv_s: 0.0
+      hsv_v: 0.0
+
+      # Geometric transforms disabled
+      degrees: 0.0
+      translate: 0.0
+      scale: 0.0
+      shear: 0.0
+      perspective: 0.0
+
+      # Flips disabled
+      fliplr: 0.0
+      flipud: 0.0
+
+      # Ultralytics augmentation controls disabled
+      mosaic: 0.0
+      mixup: 0.0
+      copy_paste: 0.0
+      cutmix: 0.0
+      close_mosaic: 0
+
+  # Evaluation metrics
+  evaluation_config:
+    image_size: 1024 
+    confidence_threshold: 0.001
+    iou_threshold: 0.5
+    max_detections: 100
+    metrics: ["mAP", "AP_50", "AP_75", "AP_small", "AP_medium", "AP_large"]
+
+
+# Scoring configuration
+scoring_config:
+  type: "min_scorer"
+  alpha: 0.5
+  beta: 0.5
+  iou_threshold: 0.5
+  weight_mode: "balance_correlation"  # fixed | mean_match | balance_correlation
+  object_weight: 0.9
+  false_positive_weight: 0.1
+
+
+# Copy-paste augmentation configuration
+augmentation_config:
+  # Selection mode
+  use_score_guidance: true
+  reverse_score_guidance: false
+  same_image_only: true
+  score_weight_function: "linear"  # linear | exponential | logarithmic
+  score_alpha: 3.0
+
+  # How much augmentation to generate
+  dataset_ratio: 0.3
+  min_objects_per_image: 2
+  max_objects_per_image: 8
+
+  # Source data discovery and reproducibility
+  image_extensions: [".jpg", ".jpeg", ".png", ".bmp", ".webp"]
+  selection_seed: 123
+
+  # Reuse limits
+  max_image_reuse: 2
+  max_object_reuse: 3
+  min_object_area_px: 250
+
+  # Object transform
+  scale_min: 0.9
+  scale_max: 1.1
+  rotation_deg_max: 20
+
+  # Blending
+  blending_method: none  # seamless_clone | alpha | none | lab_gaussian
+  lab_gaussian_kernel_size: 0
+
+  # Placement control
+  avoid_overlap: true
+  placement_control: true
+  placement_margin_px: 5
+  random_placement_attempts: 12
+  use_jiggle_placement: true
