@@ -49,8 +49,8 @@ outputs/
 
 # The parent result dir is in the folder results/exp_name
 
-RESULTS_DIR = Path(f"results/{Path(__file__).stem}_gwhd")
-CONFIG_DIR = Path("/home/khanh/Projects/DifficultyAgri/configs/experiments/global_wheat_head_yolo.yaml")
+RESULTS_DIR = Path(f"results/{Path(__file__).stem}_gwhd_2021")
+CONFIG_DIR = Path("/home/khanh/Projects/DifficultyAgri/configs/experiments/gwhd_2021.yaml")
 
 
 def _metric_stats(values: list[float]) -> dict:
@@ -102,7 +102,7 @@ def run_experiment(config_path: str):
     max_det = compute_max_det_from_train_labels(
         train_labels_dir=initial_dataset_properties.train_labels_dir,
         percentile=0.99,
-        multiplier=3,
+        multiplier=5,
     )
     print(f"Running Step 1-3 with seeds: {seeds}")
     print(f"Auto max_det from p99 object count x3: {max_det}")

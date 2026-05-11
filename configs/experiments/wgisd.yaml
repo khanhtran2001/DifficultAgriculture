@@ -1,5 +1,4 @@
-# Configuration for training a YOLOv8s model on the DOTA/DOTA-v2 dataset.
-# DOTA contains 15 classes of aerial objects from various orientations.
+
 
 # General configuration
 general:
@@ -8,47 +7,32 @@ general:
 
 # Dataset configuration
 dataset_config:
-  name: dota_v2
+  name: minneapple
   type: "yolo_detection"
-  root_dir: /home/khanh/Projects/DifficultyAgri/datasets/dota/yolo_format/dota_yolo
-  train_mask_dir: null
-  num_classes: 15
-  class_names:
-    - "plane"
-    - "baseball-diamond"
-    - "bridge"
-    - "ground-track-field"
-    - "small-vehicle"
-    - "large-vehicle"
-    - "ship"
-    - "tennis-court"
-    - "basketball-court"
-    - "storage-tank"
-    - "soccer-ball-field"
-    - "roundabout"
-    - "harbor"
-    - "swimming-pool"
-    - "helicopter"
+  root_dir: /home/khanh/Projects/DifficultyAgri/datasets/wgisd/yolo_format 
+  train_mask_dir: none 
+  num_classes: 1
+  class_names: ["apple"]
 
 
 # Model configuration
 baseline_config:
 
   # Model overview and structure
-  name: yolov8m
+  name: yolov8s
   model_type: "yolo"
-  pretrained_weights_path: "/home/khanh/Projects/DifficultyAgri/finetuned_baseline_model/yolov8m.pt"
-
+  pretrained_weights_path: "/home/khanh/Projects/DifficultyAgri/finetuned_baseline_model/yolov8s.pt" 
+  
   # Training parameters
   training_config:
-    epochs: 200
+    epochs: 200 
     batch_size: 16
     input_size: 1024
     learning_rate: 0.01
-    early_stopping_patience: 10
+    early_stopping_patience: 50
     seed: 123
 
-  # Augmentation parameters disabled for baseline training
+  # Augmentation parameters disabled for plain training
     augmentation:
       hsv_h: 0.0
       hsv_s: 0.0
@@ -75,9 +59,9 @@ baseline_config:
   # Evaluation metrics
   evaluation_config:
     image_size: 1024
-    confidence_threshold: 0.001
+    confidence_threshold: 0.001 
     iou_threshold: 0.5
-    max_detections: 100
+    max_detections: 100 
     metrics: ["mAP", "AP_50", "AP_75", "AP_small", "AP_medium", "AP_large"]
 
 
@@ -88,14 +72,14 @@ scoring_config:
   beta: 0.5
   iou_threshold: 0.5
   weight_mode: "balance_correlation"  # fixed | mean_match | balance_correlation
-  object_weight: 0.9
+  object_weight: 1
   false_positive_weight: 0.1
 
 
 # Copy-paste augmentation configuration
 augmentation_config:
   # Selection mode
-  use_score_guidance: true
+  use_score_guidance: true 
   reverse_score_guidance: false
   same_image_only: true
   score_weight_function: "linear"  # linear | exponential | logarithmic
@@ -107,22 +91,22 @@ augmentation_config:
   max_objects_per_image: 8
 
   # Source data discovery and reproducibility
-  image_extensions: [".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif"]
+  image_extensions: [".jpg", ".jpeg", ".png", ".bmp", ".webp"]
   selection_seed: 123
 
   # Reuse limits
   max_image_reuse: 2
-  max_object_reuse: 3
-  min_object_area_px: 250
+  max_object_reuse: 2
+  min_object_area_px: 0
 
   # Object transform
   scale_min: 0.9
   scale_max: 1.1
   rotation_deg_max: 20
 
-  # Blending
+  # Blending (implemented in ImageSynthesizer)
   blending_method: none  # seamless_clone | alpha | none | lab_gaussian
-  lab_gaussian_kernel_size: 0
+  lab_gaussian_kernel_size: 0     # used when blending_method=lab_gaussian
 
   # Placement control
   avoid_overlap: true
@@ -130,3 +114,8 @@ augmentation_config:
   placement_margin_px: 5
   random_placement_attempts: 12
   use_jiggle_placement: true
+
+  image_selection_method: "boundary" 
+  image_selection_group: "high"  # low | medium | high
+  object_selection_method: "boundary"
+  object_selection_group: "high"  # low | medium | high

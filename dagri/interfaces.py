@@ -133,6 +133,9 @@ class EvaluationResults:
     AP_small: float
     AP_medium: float
     AP_large: float
+    AP_very_small: float
+    AP_small_20_32: float
+    AP_medium_gt_32: float
 
 @dataclass
 class PredictionResult:

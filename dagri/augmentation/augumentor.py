@@ -111,9 +111,11 @@ class CopyPasteAugmentor(AugmentorInterface):
         image_extensions = self.config.get("image_extensions", [".jpg", ".jpeg", ".png"])
         selection_seed = self.config.get("selection_seed")
 
-        # New: Boundary-based selection method
-        augmentation_method = str(self.config.get("augmentation_method")).strip().lower()
-        selection_group = str(self.config.get("group")).strip().lower()
+        # New: Separate boundary-based selection methods for objects and images
+        object_selection_method = str(self.config.get("object_selection_method", "score")).strip().lower()
+        object_selection_group = str(self.config.get("object_selection_group", "medium")).strip().lower()
+        image_selection_method = str(self.config.get("image_selection_method", "score")).strip().lower()
+        image_selection_group = str(self.config.get("image_selection_group", "medium")).strip().lower()
 
         rng = random.Random(int(selection_seed)) if selection_seed not in (None, "null") else random.Random()
 
@@ -135,18 +137,25 @@ class CopyPasteAugmentor(AugmentorInterface):
 
         print(f"[Augmentor] Loaded {len(images)} images and {len(objects)} objects")
         if use_score:
-            print(f"[Augmentor] Using score-guided selection (method={augmentation_method})")
+            print(f"[Augmentor] Using score-guided selection")
         print(
             f"[Augmentor] Config: dataset_ratio={dataset_ratio}, "
             f"min_objects={min_objects_per_image}, max_objects={max_objects_per_image}"
         )
         if use_score:
-            if augmentation_method == "boundary":
-                print(f"[Augmentor] Boundary selection: group={selection_group}")
+            if object_selection_method == "boundary":
+                print(f"[Augmentor] Object selection: boundary method, group={object_selection_group}")
             else:
                 reverse_str = " (REVERSED)" if reverse_score_guidance else ""
                 print(
-                    f"[Augmentor] Score weighting: function={score_weight_function}, alpha={score_alpha}{reverse_str}"
+                    f"[Augmentor] Object selection: score weighting, function={score_weight_function}, alpha={score_alpha}{reverse_str}"
+                )
+            if image_selection_method == "boundary":
+                print(f"[Augmentor] Image selection: boundary method, group={image_selection_group}")
+            else:
+                reverse_str = " (REVERSED)" if reverse_score_guidance else ""
+                print(
+                    f"[Augmentor] Image selection: score weighting, function={score_weight_function}, alpha={score_alpha}{reverse_str}"
                 )
         if min_object_area_px > 0:
             print(f"[Augmentor] Min object area filter: {min_object_area_px:.1f} px^2")
@@ -184,6 +193,8 @@ class CopyPasteAugmentor(AugmentorInterface):
                 score_alpha,
                 reverse_score_guidance,
                 rng,
+                selection_method=image_selection_method,
+                selection_group=image_selection_group,
             )
             if bg_image is None:
                 print("\n[Augmentor] Stopped: no eligible background images left under reuse caps")
@@ -208,6 +219,8 @@ class CopyPasteAugmentor(AugmentorInterface):
                 score_alpha,
                 reverse_score_guidance,
                 rng,
+                selection_method=object_selection_method,
+                selection_group=object_selection_group,
             )
             if not selected_objects:
                 continue
@@ -364,6 +377,8 @@ class CopyPasteAugmentor(AugmentorInterface):
         score_alpha: float,
         reverse_score_guidance: bool,
         rng: random.Random,
+        selection_method: str,
+        selection_group: str,
     ) -> ImageData | None:
         """Select a background image, respecting reuse caps"""
         available = [
@@ -375,6 +390,13 @@ class CopyPasteAugmentor(AugmentorInterface):
             return None
 
         if not use_score:
+            return rng.choice(available)
+
+        # Apply boundary filtering if using boundary method
+        if use_score and selection_method == "boundary":
+            available = self._filter_by_boundary(available, selection_group)
+            if not available:
+                return None
             return rng.choice(available)
 
         # Score-guided selection
@@ -408,8 +430,8 @@ class CopyPasteAugmentor(AugmentorInterface):
         score_alpha: float,
         reverse_score_guidance: bool,
         rng: random.Random,
-        augmentation_method: str = "score",
-        selection_group: str = "medium",
+        selection_method: str,
+        selection_group: str,
     ) -> list[ObjectData]:
         """Select objects to copy, allowing within-image repeats while enforcing reuse caps."""
         if not objects or num_to_select <= 0:
@@ -430,7 +452,7 @@ class CopyPasteAugmentor(AugmentorInterface):
                 break
 
             # Apply boundary filtering if using boundary method
-            if use_score and augmentation_method == "boundary":
+            if use_score and selection_method == "boundary":
                 available = self._filter_by_boundary(available, selection_group)
                 if not available:
                     break

@@ -10,7 +10,7 @@ def initialize_output_directory(parent_output_dir: Path, overwrite: bool = True)
     """
     if parent_output_dir.exists():
         if overwrite:
-            shutil.rmtree(parent_output_dir)
+            # shutil.rmtree(parent_output_dir)
             parent_output_dir.mkdir(parents=True, exist_ok=True)
             print(f"Output directory {parent_output_dir} existed and was overwritten.")
         else:

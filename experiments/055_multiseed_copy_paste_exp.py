@@ -19,9 +19,9 @@ from dagri.augmentation import CopyPasteAugmentor
 
 import experiments.utils as exputils
 
-RESULTS_DIR = Path(f"results/{Path(__file__).stem}")
-CONFIG_DIR = Path("/home/khanh/Projects/DifficultyAgri/configs/experiments/minneapple_yolo.yaml")
-CACHE_ROOT = Path("/home/khanh/Projects/DifficultyAgri/.cache_result/no_trad_aug/minneapple")
+RESULTS_DIR = Path(f"results/{Path(__file__).stem}_gwhd_2021_boundary_high")
+CONFIG_DIR = Path("/home/khanh/Projects/DifficultyAgri/configs/experiments/gwhd_2021.yaml")
+CACHE_ROOT = Path("/home/khanh/Projects/DifficultyAgri/.cache_result/no_trad_aug/gwhd_2021")
 
 
 

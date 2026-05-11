@@ -186,6 +186,12 @@ class YoloUltralyticsModel:
             coco_eval.accumulate()
             coco_eval.summarize()
 
+            size_band_stats = self._evaluate_ap_by_pixel_size(coco_gt, coco_dt)
+            print("Custom AP by object size (equivalent square side length in pixels)")
+            print(f"  AP very small (<20px):   {size_band_stats['AP_very_small']:.4f}")
+            print(f"  AP small (20-32px):      {size_band_stats['AP_small_20_32']:.4f}")
+            print(f"  AP medium (>32px):       {size_band_stats['AP_medium_gt_32']:.4f}")
+
             stats = coco_eval.stats
 
             return EvaluationResults(
@@ -195,11 +201,55 @@ class YoloUltralyticsModel:
                 AP_small=float(stats[3]),
                 AP_medium=float(stats[4]),
                 AP_large=float(stats[5]),
+                AP_very_small=float(size_band_stats["AP_very_small"]),
+                AP_small_20_32=float(size_band_stats["AP_small_20_32"]),
+                AP_medium_gt_32=float(size_band_stats["AP_medium_gt_32"]),
             )
 
     def custom_evaluate(self, best_weight_path: str, dataset: DatasetProperties) -> EvaluationResults:
         """Backward-compatible alias for test-set evaluation."""
         return self.custom_evaluate_on_test_set(best_weight_path, dataset)
+
+    @staticmethod
+    def _compute_mean_ap_for_area_label(coco_eval: COCOeval, area_label: str) -> float:
+        """Compute mean AP for a named area range from an accumulated COCOeval object."""
+        area_labels = list(getattr(coco_eval.params, "areaRngLbl", []))
+        if area_label not in area_labels:
+            raise ValueError(f"Area label not found in COCOeval params: {area_label}")
+
+        area_idx = area_labels.index(area_label)
+        max_det_idx = len(coco_eval.params.maxDets) - 1
+
+        precision = np.asarray(coco_eval.eval["precision"], dtype=float)
+        precision = precision[:, :, :, area_idx, max_det_idx]
+        precision = precision[precision > -1]
+        if precision.size == 0:
+            return float("nan")
+        return float(np.mean(precision))
+
+    def _evaluate_ap_by_pixel_size(self, coco_gt: COCO, coco_dt) -> dict[str, float]:
+        """
+        Compute AP over custom pixel-size buckets.
+
+        The buckets are defined on the equivalent square side length, i.e. area thresholds
+        of 20^2 and 32^2 pixels for very small / small / medium.
+        """
+        custom_eval = COCOeval(coco_gt, coco_dt, iouType="bbox")
+        custom_eval.params.areaRng = [
+            [0.0, 1e10],
+            [0.0, 20.0**2],
+            [20.0**2, 32.0**2],
+            [32.0**2, 1e10],
+        ]
+        custom_eval.params.areaRngLbl = ["all", "very_small", "small_20_32", "medium_gt_32"]
+        custom_eval.evaluate()
+        custom_eval.accumulate()
+
+        return {
+            "AP_very_small": self._compute_mean_ap_for_area_label(custom_eval, "very_small"),
+            "AP_small_20_32": self._compute_mean_ap_for_area_label(custom_eval, "small_20_32"),
+            "AP_medium_gt_32": self._compute_mean_ap_for_area_label(custom_eval, "medium_gt_32"),
+        }
 
     def _create_data_yaml(self, dataset_properties: DatasetProperties, output_dir: str) -> str:
         """

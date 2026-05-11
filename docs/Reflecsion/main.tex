@@ -1,14 +1,576 @@
-\documentclass{article}
+\documentclass[10pt, a4paper]{article}
 
-\title{My Document}
-\author{}
-\date{}
+\usepackage[a4paper, top=2cm, bottom=2cm, left=2.2cm, right=2.2cm]{geometry}
+\usepackage{amsmath, amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{microtype}
+\usepackage{parskip}
+\usepackage{titlesec}
+\usepackage{caption}
+\usepackage{float}
+
+\setlength{\parskip}{4pt}
+\setlength{\parindent}{0pt}
+
+\hypersetup{colorlinks=true, linkcolor=black, citecolor=black, urlcolor=black}
+
+\titleformat{\section}{\normalsize\bfseries}{}{0em}{}[\vspace{-4pt}\rule{\linewidth}{0.8pt}]
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.8em}{}
+\titleformat{\subsubsection}{\normalsize\itshape}{\thesubsubsection}{0.8em}{}
+\titlespacing{\section}{0pt}{10pt}{4pt}
+\titlespacing{\subsection}{0pt}{6pt}{2pt}
+\titlespacing{\subsubsection}{0pt}{4pt}{2pt}
+
+\captionsetup{font=small, skip=4pt}
 
 \begin{document}
 
-\maketitle
+% ── Header ───────────────────────────────────────────────────────────────────
+\begin{center}
+  {\large\textbf{MIS: Difficulty Scoring as a Pre-Augmentation Diagnostic
+    for Agricultural Object Detection}}\\[4pt]
+  Huy Khanh Tran \quad
+  Graduate School of Integrated Science and Technology,
+  Shizuoka University\\[2pt]
+  {\small Research Status Report --- May 2026 --- Target: GCCE 2026 (2 pages)}
+\end{center}
+\rule{\linewidth}{1pt}
+\vspace{2pt}
 
-\section{Introduction}
-Hello world.
+% ── Summary ──────────────────────────────────────────────────────────────────
+\textbf{One-sentence claim.}
+MIS provides structural diagnostics --- computable from training-set inference
+alone --- that are consistent with observed copy-paste augmentation failure
+and that identify the failure conditions before augmentation is conducted.
+
+\textbf{Why the claim changed from the original draft.}
+The original aim was to show that MIS-guided copy-paste improves AP.
+Three datasets (MinneApple, GWHD, VisDrone) showed uniform failure.
+The original positive result on MinneApple ($\Delta\text{AP}=+0.013$
+for Score\,CP vs.\ Random\,CP) was an artifact of a contaminated validation
+split and does not hold on clean data.
+Rather than search for a positive result, the research is reframed:
+the consistent failure is itself informative, and MIS correctly identifies
+the structural reasons for that failure.
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Methodology}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{MIS Scoring}
+
+Predictions are generated at low confidence threshold $\tau_{\text{conf}}=0.001$
+(to capture near-miss detections) and matched to ground truth at
+$\tau_{\text{IoU}}=0.5$.
+Let $\mathcal{P}(g)$ be matched predictions for object $g$.
+The \textbf{object difficulty score} is:
+\begin{equation}
+  S_{\text{obj}}(g) = \begin{cases}
+    \min_{p \in \mathcal{P}(g)}
+      \bigl[\alpha(1 - c_p) + \beta(1 - u_p)\bigr],
+      & \mathcal{P}(g) \neq \varnothing \\
+    \alpha + \beta = 1.0, & \text{missed object}
+  \end{cases}
+  \label{eq:sobj}
+\end{equation}
+with $\alpha=\beta=0.5$, $c_p=\text{conf}(p)$, $u_p=\text{IoU}(p,g)$.
+Taking the minimum is necessary because the low $\tau_{\text{conf}}$
+generates many candidate boxes; minimum selects the best-matching one.
+
+The \textbf{image difficulty score} is:
+\begin{equation}
+  S_{\text{img}}(I) = w_1 \cdot \frac{1}{|G(I)|}
+    \sum_{g \in G(I)} S_{\text{obj}}(g)
+    + w_2 \cdot \text{FPrate}(I)
+  \label{eq:simg}
+\end{equation}
+$w_1 = 1$ (fixed). $w_2$ is calibrated automatically by grid search to
+minimize $|r(S_{\text{img}},\text{miss\_rate})-r(S_{\text{img}},\text{FP\_rate})|$,
+balancing both error signals.
+FP rate is computed at the optimal operating threshold found from validation.
+
+\subsection{Dataset Splits}
+
+\textbf{MinneApple.}
+The dataset contains images from only 10 unique apple trees.
+A random image-level split causes images from the same tree to appear in
+both training and validation, inflating validation AP through tree-specific
+memorization (initial contaminated baseline: AP$=0.439$, discarded).
+We use a \textbf{tree-identity-clean split}: validation uses 30 images
+from trees not in training ($\approx$3 images per held-out tree).
+Test set is the official MinneApple test split.
+Training: 200 epochs max, early stopping patience 50 epochs.
+
+\textbf{MinneApple size thresholds.}
+COCO thresholds (small $\leq32$\,px, medium $\leq96$\,px) do not suit
+MinneApple at $720{\times}1280$ resolution.
+We calibrate to the actual training distribution:
+
+\begin{center}
+\small
+\begin{tabular}{lll}
+\toprule
+\textbf{Category} & \textbf{Criterion} & \textbf{Train \%} \\
+\midrule
+Very Small & area $\leq400$\,px$^2$ ($<20{\times}20$\,px) & 23.08\% \\
+Small      & $400<$ area $\leq1024$\,px$^2$ (20--32\,px)  & 50.53\% \\
+Medium     & area $>1024$\,px$^2$ ($>32{\times}32$\,px)   & 26.39\% \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Augmentation Setup}
+
+A YOLOv8s baseline is trained from COCO pretrained weights.
+Inference on the full training set yields scores via Eq.\,\eqref{eq:sobj}--\eqref{eq:simg}.
+Training set extended by 30\% (189 synthetic images added to 536).
+Each synthetic image: 2--8 pasted objects, scale $[0.9,1.1]$,
+rotation $\pm15^\circ$, no blending, \textbf{same-image constraint}
+(objects pasted into the image they come from, to preserve photometric
+and contextual consistency, following Kisantal et al.\ \cite{kisantal2019}).
+
+All images and objects are ranked by score and partitioned into three
+equal tertiles. Five conditions compared (3 seeds each):
+
+\begin{center}
+\small
+\begin{tabular}{lll}
+\toprule
+\textbf{Condition} & \textbf{Image pool} & \textbf{Object pool} \\
+\midrule
+Random        & Uniform random     & Uniform random \\
+Score High    & Top tertile        & Top tertile \\
+Score Medium  & Middle tertile     & Middle tertile \\
+Score Low     & Bottom tertile     & Bottom tertile \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Score Validation}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Image-Level Correlation}
+
+\begin{table}[H]
+\centering
+\small
+\caption{Pearson correlation of $S_{\text{img}}$ with per-image error rates.}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Dataset} & $r(\text{score, miss rate})$ & $r(\text{score, FP rate})$ \\
+\midrule
+MinneApple & 0.698 & 0.688 \\
+GWHD       & 0.816 & 0.818 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Moderate-to-strong correlations on both datasets.
+GWHD is higher because its difficulty is structured at the domain level
+(cleaner signal), while MinneApple has heterogeneous within-tree variation.
+
+\subsection{Object-Size Validity: MinneApple}
+
+\begin{table}[H]
+\centering
+\small
+\caption{Mean $S_{\text{obj}}$ and baseline AP by size category (MinneApple,
+  consistent across all 3 seeds). Spearman $r_s=-0.82$ between size rank
+  and difficulty rank confirms strong monotonic inverse relationship.}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Category} & \textbf{AP} & \textbf{Mean $S_{\text{obj}}$}
+  & \textbf{Std} & \textbf{In top-score tertile} \\
+\midrule
+Very Small ($<$20\,px) & 0.071 & 0.1524 & 0.1433
+  & \textbf{64.39\% (5138 objects)} \\
+Small (20--32\,px)     & 0.270 & 0.0755 & 0.0475
+  & 33.88\% (2704 objects) \\
+Medium ($>$32\,px)     & 0.493 & 0.0526 & 0.0184
+  & \textbf{1.73\% (138 objects)} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Key finding: 98.27\% of high-difficulty objects are in size
+categories where baseline AP $\leq$ 0.27.}
+Only 1.73\% of the objects MIS identifies as hardest fall in the medium
+category where the model has genuine learning headroom (AP$=0.49$).
+This means score-guided augmentation concentrating on hard objects
+will predominantly paste near-undetectable instances regardless of
+which difficulty tier is selected.
+
+\subsection{Domain-Level Validity: GWHD}
+
+\begin{table}[H]
+\centering
+\small
+\caption{GWHD domain analysis: MIS median difficulty vs.\ AP across
+  18 domains. Pearson $r=-0.905$, Spearman $r_s=-0.899$.
+  MIS ranks domain difficulty without domain labels.}
+\begin{tabular}{lcc||lcc}
+\toprule
+\textbf{Domain} & \textbf{Median $S$} & \textbf{AP}
+  & \textbf{Domain} & \textbf{Median $S$} & \textbf{AP} \\
+\midrule
+Arvalis\_10     & 0.200 & 0.744 & Arvalis\_8      & 0.342 & 0.546 \\
+Rres\_1         & 0.227 & 0.658 & Arvalis\_5      & 0.342 & 0.542 \\
+ETHZ\_1         & 0.268 & 0.643 & Arvalis\_9      & 0.372 & 0.520 \\
+NMBU\_2         & 0.299 & 0.639 & Arvalis\_12     & 0.395 & 0.472 \\
+Inrae\_1        & 0.264 & 0.633 & Arvalis\_3      & 0.350 & 0.470 \\
+Arvalis\_11     & 0.358 & 0.606 & Arvalis\_7      & 0.407 & 0.463 \\
+NMBU\_1         & 0.335 & 0.601 & Arvalis\_2      & 0.386 & 0.454 \\
+Arvalis\_6      & 0.289 & 0.600 & Arvalis\_1      & 0.400 & 0.452 \\
+ULiège-GxABT\_1 & 0.380 & 0.597 & Arvalis\_4      & 0.475 & 0.387 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Augmentation Study}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Object Size Distribution Across Conditions}
+
+\begin{table}[H]
+\centering
+\small
+\caption{Object scale distribution per augmentation condition.
+  \emph{Gap} = medium-object \% minus test-set target (44.70\%).
+  All gaps are negative: no condition bridges the train--test size mismatch.}
+\begin{tabular}{lrrrrc}
+\toprule
+\textbf{Condition} & \textbf{V.Small} & \textbf{Small}
+  & \textbf{Medium} & \textbf{Gap} & \textbf{Obj/Img} \\
+\midrule
+Test target       & 17.17\% & 38.14\% & \textbf{44.70\%}
+  & 0\,pp & 37.11 \\
+\midrule
+Baseline (train)  & 23.08\% & 50.53\% & 26.39\% & $-$18.31\,pp & 42.57 \\
+Random CP         & 23.52\% & 49.98\% & 26.50\% & $-$18.20\,pp & 44.03 \\
+Score High        & 26.48\% & 49.59\% & 23.92\% & $-$20.78\,pp & 43.85 \\
+Score Medium      & 22.56\% & 50.80\% & 26.64\% & $-$18.06\,pp & 43.23 \\
+\textbf{Score Low}& \textbf{19.99\%} & 48.56\% & \textbf{31.45\%}
+  & $-$13.25\,pp & 42.38 \\
+\bottomrule
+\multicolumn{6}{l}{\small Score High \emph{widens} the gap.
+  Score Low achieves the largest shift toward test, yet still fails (see Table 4).}
+\end{tabular}
+\end{table}
+
+The maximum density increase across all conditions is \textbf{3.4\%}
+(42.57 $\to$ 44.03 objects per image).
+Kisantal et al.\ achieved density increases of 30--60\% starting from
+3--5 objects per image.
+The mechanism that produced gains in their setting does not operate
+at MinneApple's baseline density.
+
+\subsection{Detection Results}
+
+\begin{table}[H]
+\centering
+\small
+\caption{3-seed mean AP with standard deviation.
+  All $\Delta$AP values are not statistically significant (ns):
+  all differences $<1\sigma$ of baseline.}
+\begin{tabular}{lcrrrr}
+\toprule
+\textbf{Condition} & \textbf{AP $\pm\sigma$} & $\Delta$\textbf{AP}
+  & \textbf{AP$_{50}$} & \textbf{AP\,vs} & \textbf{AP\,s} \\
+\midrule
+Baseline      & \textbf{0.353 $\pm$ 0.005} & ---
+  & 0.648 & 0.071 & 0.270 \\
+Random CP     & 0.346 $\pm$ 0.005 & $-$0.007 (ns) & 0.637 & 0.069 & 0.266 \\
+Score High    & 0.350 $\pm$ 0.007 & $-$0.003 (ns) & 0.645 & 0.069 & 0.271 \\
+Score Medium  & 0.348 $\pm$ 0.006 & $-$0.005 (ns) & 0.643 & 0.072 & 0.272 \\
+Score Low     & 0.348 $\pm$ 0.003 & $-$0.005 (ns) & 0.643 & 0.068 & 0.271 \\
+\bottomrule
+\multicolumn{6}{l}{\small AP\,vs = AP very small ($<$20\,px).
+  AP\,s = AP small (20--32\,px).}
+\end{tabular}
+\end{table}
+
+\textbf{Score High} selects 64.39\% very small objects (AP$=0.07$),
+widens the distribution gap to 20.78\,pp, and produces no improvement.
+Confirms that hard objects in MinneApple are near-undetectable
+regardless of training exposure.
+
+\textbf{Score Low} (most important result) selects predominantly
+medium-sized objects, achieves the largest distribution shift
+(gap narrows to 13.25\,pp), yet still produces no improvement.
+This eliminates selection strategy as the explanation for failure:
+even the condition best positioned to succeed cannot overcome
+a 3.4\% density increase on a dataset already averaging 42.57 objects
+per image.
+
+\subsection{Feature Space Analysis}
+
+Feature representations extracted from YOLOv8s P5 layer,
+projected via PCA (PC1: 24.4\%, PC2: 15.4\% variance).
+
+\begin{center}
+\small
+\begin{tabular}{lrr}
+\toprule
+\textbf{Split} & \textbf{PC1 centroid} & \textbf{PC2 centroid} \\
+\midrule
+Original train  & $+4.83$ & $+1.30$ \\
+Augmented       & $+3.72$ & $-3.83$ \\
+Test            & $-11.24$ & $-0.35$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Augmented images remain co-located with training data
+($\Delta\text{PC1}\approx 1.1$) while both are separated from the
+test distribution by $\Delta\text{PC1}\approx 16$.
+\textbf{Copy-paste does not move the training feature distribution
+toward the test distribution.}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Diagnostic Framework}
+% ══════════════════════════════════════════════════════════════════════════════
+
+The purpose of this section is to answer the question:
+\textbf{given MIS scores on a dataset, how do you decide whether to
+apply copy-paste augmentation?}
+
+The answer is a three-criterion checklist.
+Each criterion is checkable from training-set inference alone, before
+any augmentation is run.
+
+\subsection{The Three Criteria}
+
+\textbf{Criterion 1: AP of hard objects (resolution ceiling).}\\
+Compute $S_{\text{obj}}$ for all training objects.
+Find the top-difficulty tertile (hardest third by score).
+Identify which size/domain category those objects predominantly belong to.
+Look up the baseline AP for that category.
+
+\begin{center}
+\small
+\begin{tabular}{lll}
+\toprule
+\textbf{Condition} & \textbf{Signal} & \textbf{Action} \\
+\midrule
+AP of hard-object category $<$ 0.15
+  & Hard objects near-undetectable.
+  & \textbf{Do not use copy-paste.} \\
+  & Pasting more copies adds no signal. & \\
+AP of hard-object category $\geq$ 0.15
+  & Hard objects partially learnable.
+  & Proceed to Criterion 2. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textit{MinneApple result:} AP$_\text{very small}=0.071$, and 64.39\% of
+hard objects are very small. \textbf{Criterion 1 signals: do not use copy-paste.}
+
+\medskip
+\textbf{Criterion 2: Domain concentration (covariate shift).}\\
+For each image in the top-difficulty tertile, record which domain it
+comes from. If the majority come from domain-minority sources:
+
+\begin{center}
+\small
+\begin{tabular}{ll}
+\toprule
+\textbf{Condition} & \textbf{Action} \\
+\midrule
+Hard images concentrated in minority domains
+  & Score-guided selection amplifies imbalance. \\
+  & \textbf{Do not use score-guided copy-paste.} \\
+Hard images spread across domains
+  & Proceed to Criterion 3. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textit{GWHD result:} Hard images concentrate in the Arvalis minority
+domains (lowest AP). \textbf{Criterion 2 signals: do not use score-guided
+copy-paste.}
+
+\medskip
+\textbf{Criterion 3: Augmentation density headroom.}\\
+Compute: proposed density increase $= \frac{\text{pasted objects/image} \times \text{augmentation ratio}}{\text{mean objects/image}}$.
+
+\begin{center}
+\small
+\begin{tabular}{ll}
+\toprule
+\textbf{Condition} & \textbf{Action} \\
+\midrule
+Density increase $<$ 10\%
+  & Augmentation too small to shift distribution. \\
+  & \textbf{Increase augmentation ratio or reduce baseline density.} \\
+Density increase $\geq$ 10\%
+  & Distribution shift is viable. Copy-paste may help. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textit{MinneApple result:} $(5\ \text{obj} \times 0.35) / 42.57 = 4.1\%$
+density increase. \textbf{Criterion 3 signals: insufficient headroom.}
+
+\subsection{Summary Decision Table}
+
+\begin{table}[H]
+\centering
+\small
+\caption{Applying the three-criterion diagnostic to both datasets.
+  All three criteria signal failure on both.
+  All confirmed by experiment (Table 4).}
+\begin{tabular}{lllll}
+\toprule
+\textbf{Criterion} & \textbf{MinneApple} & \textbf{GWHD}
+  & \textbf{Prediction} & \textbf{Observed} \\
+\midrule
+1. AP of hard objects
+  & 0.071 $\to$ \textbf{Fail}
+  & Mixed (domain-dependent)
+  & Fail & Fail\,$\checkmark$ \\
+2. Domain concentration
+  & N/A (single domain)
+  & Minority-concentrated $\to$ \textbf{Fail}
+  & Fail & Fail\,$\checkmark$ \\
+3. Density headroom
+  & 3.4\% $\to$ \textbf{Fail}
+  & Similar $\to$ \textbf{Fail}
+  & Fail & Fail\,$\checkmark$ \\
+\midrule
+\multicolumn{2}{l}{\textbf{Overall}} & & \textbf{Fail} & \textbf{Fail\,$\checkmark$} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{When Copy-Paste Is Likely to Help}
+
+The framework also implies the positive conditions --- the dataset
+properties where copy-paste is worth attempting:
+
+\begin{itemize}[nosep, leftmargin=*]
+\item AP of hard objects $\geq 0.15$ (learnable, not yet saturated),
+\item High-difficulty images spread across domains (no concentration),
+\item Density increase $\geq 10\%$ (sparse dataset, augmentation moves
+  the distribution).
+\end{itemize}
+
+These conditions are consistent with Kisantal et al.'s success on COCO
+(sparse images, 30--60\% density increase, large learnable objects).
+On MinneApple and GWHD, none of these conditions hold, which explains
+the uniform failure.
+
+\subsection{Limitations of the Framework}
+
+The three criteria were derived from the same datasets used to validate
+them, so this is a retrospective characterization, not a prospective
+prediction tested on an unseen dataset.
+The thresholds (AP $<0.15$, density $<10\%$) are operationally
+reasonable but not formally derived.
+A prospective test on a new dataset would strengthen the framework
+substantially.
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Proposed Paper Structure (GCCE, 2 pages)}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{center}
+\small
+\begin{tabular}{llp{10cm}}
+\toprule
+\textbf{Section} & \textbf{$\approx$Words} & \textbf{Content and main point} \\
+\midrule
+Abstract      & 100 & MIS scorer. 5 conditions. 64.39\% hard = very small.
+  18.31\,pp mismatch. Decision rule. No positive AP claimed. \\
+I. Intro      & 160 & Copy-paste fails on agricultural data.
+  No diagnostic exists.
+  Two contributions: (1) MIS scorer, (2) structural diagnostic study. \\
+II. Related   & 100 & OHEM/Focal Loss (training-time, different purpose).
+  Kisantal (anchor-based, mechanism does not transfer to YOLOv8s).
+  MIS: post-hoc, architecture-agnostic. \\
+III. Method   & 200 & Eq.~1--2 with correct $\tau$ values.
+  Five conditions. Same-image justification.
+  Custom thresholds with justification. \\
+IV. Diagnostic& 200 & Table: Pearson. Table: size rankings + 64.39\% finding.
+  GWHD $r=-0.905$. 18\,pp mismatch.
+  Three-criterion decision table. \\
+V. Augmentation & 250 & Combined AP + distribution table.
+  Score Low analysis (most informative result).
+  PCA figure. All deltas marked (ns). \\
+VI. Conclusion & 100 & Structural failure confirmed.
+  Decision rule in 3 steps.
+  Future: generative augmentation targeting the learnable zone. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Known Errors to Fix Before Submission}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{enumerate}[nosep, leftmargin=*]
+\item \textbf{Verify GWHD split.}
+  Confirm GWHD used a domain-based split (not random image-level).
+  If contaminated, retrain or limit claims to MinneApple only.
+\item \textbf{Rename ``boundary sampling.''} 
+  The implementation is tertile filtering, not class-boundary sampling
+  in the ML sense. Use ``difficulty-tier selection'' throughout.
+\item \textbf{Do not write ``predicts.''}
+  The framework is retrospectively validated on the same datasets
+  used to derive it.
+  Write ``identifies structural conditions consistent with failure''
+  rather than ``predicts failure.''
+\item \textbf{Change ``strongly positive''} to ``moderate-to-strong
+  ($r=0.698$--$0.818$)'' for Pearson correlations.
+  $r=0.698$ is moderate, not strong.
+\item \textbf{Fix all typos} from original draft before submission.
+\end{enumerate}
+
+% ── References ───────────────────────────────────────────────────────────────
+\begin{thebibliography}{9}
+
+\bibitem{kisantal2019}
+M.~Kisantal, Z.~Wojna, J.~Murawski, J.~Naruniec, and K.~Cho,
+``Augmentation for small object detection,''
+\textit{arXiv:1902.07296}, 2019.
+
+\bibitem{ghiasi2021}
+G.~Ghiasi et al.,
+``Simple copy-paste is a strong data augmentation method for instance
+segmentation,''
+in \textit{Proc.\ IEEE/CVF CVPR}, 2021, pp.\ 2918--2928.
+
+\bibitem{minneapple}
+N.~Hani, P.~Roy, and B.~Bhanu,
+``MinneApple: A benchmark dataset for apple detection and segmentation,''
+\textit{IEEE RA-L}, vol.~5, no.~2, pp.\ 852--858, 2020.
+
+\bibitem{gwhd}
+E.~David et al.,
+``Global Wheat Head Detection (GWHD) dataset,''
+\textit{Plant Phenomics}, 2021.
+
+\bibitem{ohem}
+A.~Shrivastava, A.~Gupta, and R.~Girshick,
+``Training region-based object detectors with online hard example mining,''
+in \textit{Proc.\ IEEE CVPR}, 2016.
+
+\bibitem{focal}
+T.-Y.~Lin et al.,
+``Focal loss for dense object detection,''
+in \textit{Proc.\ IEEE ICCV}, 2017.
+
+\bibitem{yolov8}
+G.~Jocher, A.~Chaurasia, and J.~Qiu,
+``YOLO by Ultralytics,'' v8.0.0, 2023.
+
+\end{thebibliography}
 
 \end{document}

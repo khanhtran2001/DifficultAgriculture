@@ -44,8 +44,9 @@ outputs/
 """
 
 # The parent result dir is in the folder results/exp_name
-RESULTS_DIR = Path(f"results/{Path(__file__).stem}")
-CONFIG_DIR = Path("/home/khanh/Projects/DifficultyAgri/configs/experiments/minneapple_yolo.yaml")
+RESULTS_DIR = Path(f"results/{Path(__file__).stem}_wgisd")
+CONFIG_DIR = Path("/home/khanh/Projects/DifficultyAgri/configs/experiments/wgisd.yaml")
+
 
 
 
@@ -80,7 +81,7 @@ def run_experiment(config_path: str):
     train_result_dir = step_2_dir / "train_results"
     baseline_model = Baseline(baseline_model_config)
 
-    best_weight_path = "/home/khanh/Projects/DifficultyAgri/results/02_minneapple_yolo_scoring_exp/Step_2_Train_and_Evaluate_BASELINE_MODEL/train_results/best.pt"
+    best_weight_path = "/home/khanh/Projects/DifficultyAgri/.cache_result/no_trad_aug/wgisd/baseline/seed_123/best.pt"
     # Evaluate on test set and save returned typed results
 
     # First we need to get the predictions of the baseline model on the train set to use as reference for scoring
@@ -89,10 +90,10 @@ def run_experiment(config_path: str):
     max_det = compute_max_det_from_train_labels(
         train_labels_dir=initial_dataset_properties.train_labels_dir,
         percentile=0.99,
-        multiplier=3,
+        multiplier=5,
     )
     print(f"Auto max_det from p99 object count x3: {max_det}")
-    image_dir = "datasets/minneapple/yolo_format/minneapple_yolo/train/images"
+    image_dir = "/home/khanh/Projects/DifficultyAgri/datasets/wgisd/yolo_format/train/images"
     low_conf_prediction_dir = f"{step_2_dir}/low_conf_predictions"
     low_conf_predictions = baseline_model.custom_predict(model_weight=best_weight_path, image_dir=image_dir, conf=low_conf_thershold, iou=iou_threshold, max_det=max_det)
     result_manager.save_prediction_results(low_conf_prediction_dir, low_conf_predictions)
@@ -122,7 +123,7 @@ def run_experiment(config_path: str):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run the MinneApple YOLO augmentation experiment")
+    parser = argparse.ArgumentParser(description="Run the augmentation experiment")
     parser.add_argument(
         "--config",
         type=str,

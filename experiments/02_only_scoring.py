@@ -31,13 +31,13 @@ experiment run and does not retrain the model.
 
 # The parent result dir is in the folder results/exp_name
 
-RESULTS_DIR = Path(f"results/{Path(__file__).stem}")
-CONFIG_DIR = Path("/home/khanh/Projects/DifficultyAgri/configs/experiments/global_wheat_head_yolo.yaml")
+RESULTS_DIR = Path(f"results/{Path(__file__).stem}_gwhd_2021")
+CONFIG_DIR = Path("/home/khanh/Projects/DifficultyAgri/configs/experiments/gwhd_2021.yaml")
 DATASET_PROPERTIES_PATH = Path(
-    "/home/khanh/Projects/DifficultyAgri/results/01_only_training/seed_123/Step_1_Load_and_Validate_Dataset/dataset_properties.json"
+    "/home/khanh/Projects/DifficultyAgri/results/01_only_training_gwhd_2021/Step_1_Load_and_Validate_Dataset/dataset_properties.json"
 )
 MODEL_WEIGHT_PATH = Path(
-    "/home/khanh/Projects/DifficultyAgri/results/01_only_training/seed_123/Step_2_Train_and_Evaluate_BASELINE_MODEL/train_results/best.pt"
+    "/home/khanh/Projects/DifficultyAgri/results/01_only_training_gwhd_2021/Step_2_Train_and_Evaluate_BASELINE_MODEL/train_results/best.pt"
 )
 
 

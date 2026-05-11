@@ -46,9 +46,9 @@ outputs/
 
 # The parent result dir is in the folder results/exp_name
 
-RESULTS_DIR = Path(f"results/{Path(__file__).stem}")
+RESULTS_DIR = Path(f"results/{Path(__file__).stem}_gwhd2021_random")
 # CONFIG_DIR = Path("/home/khanh/Projects/DifficultyAgri/configs/experiments/global_wheat_head_yolo.yaml")
-CONFIG_DIR = Path("/home/khanh/Projects/DifficultyAgri/configs/experiments/minneapple_yolo.yaml")
+CONFIG_DIR = Path("/home/khanh/Projects/DifficultyAgri/configs/experiments/gwhd_2021.yaml")
 
 
 
@@ -81,7 +81,7 @@ def run_experiment(config_path: str):
     # Train baseline model using dataset properties
     train_result_dir = step_2_dir / "train_results"
     baseline_model = Baseline(baseline_model_config)
-    best_weight_path = f"/home/khanh/Projects/DifficultyAgri/.cache_result/with_trad_aug/minneapple/baseline/seed_123/best.pt" 
+    best_weight_path = f"/home/khanh/Projects/DifficultyAgri/results/01_only_training_gwhd_2021/Step_2_Train_and_Evaluate_BASELINE_MODEL/train_results/best.pt" 
     # best_weight_path = f"/home/khanh/Projects/DifficultyAgri/.cache_result/no_trad_aug/gwhd/baseline/seed_123/best.pt"
     # Evaluate on test set and save returned typed results
     evaluation_results = baseline_model.custom_evaluate_on_test_set(best_weight_path, initial_dataset_properties)
@@ -98,8 +98,9 @@ def run_experiment(config_path: str):
         multiplier=3,
     )
     print(f"Auto max_det from p99 object count x3: {max_det}")
-    image_dir = "/home/khanh/Projects/DifficultyAgri/datasets/minneapple/yolo_format/minneapple_yolo/train/images"
+    # image_dir = "/home/khanh/Projects/DifficultyAgri/datasets/minneapple/yolo_format/minneapple_yolo/train/images"
     # image_dir = "/home/khanh/Projects/DifficultyAgri/datasets/global_wheat_head/yolo_format/global_wheat_head_yolo/train/images"
+    image_dir = "/home/khanh/Projects/DifficultyAgri/datasets/global_wheat_head/yolo_format_v2/train/images"
     low_conf_prediction_dir = f"{step_2_dir}/low_conf_predictions"
     low_conf_predictions = baseline_model.custom_predict(model_weight=best_weight_path, image_dir=image_dir, conf=low_conf_thershold, iou=iou_threshold, max_det=max_det)
     result_manager.save_prediction_results(low_conf_prediction_dir, low_conf_predictions)

@@ -109,7 +109,7 @@ augmentation_config:
   # Reuse limits
   max_image_reuse: 2
   max_object_reuse: 3
-  min_object_area_px: 250
+  min_object_area_px: 0
 
   # Object transform
   scale_min: 0.9

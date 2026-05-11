@@ -44,8 +44,8 @@ outputs/
 """
 
 # The parent result dir is in the folder results/exp_name
-RESULTS_DIR = Path(f"results/{Path(__file__).stem}")
-CONFIG_DIR = Path("/home/khanh/Projects/DifficultyAgri/configs/experiments/visdrone_yolo.yaml")
+RESULTS_DIR = Path(f"results/{Path(__file__).stem}_gwhd_2021")
+CONFIG_DIR = Path("/home/khanh/Projects/DifficultyAgri/configs/experiments/gwhd_2021.yaml")
 
 
 
