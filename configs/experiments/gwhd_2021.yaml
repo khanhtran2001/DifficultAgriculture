@@ -117,6 +117,6 @@ augmentation_config:
   use_jiggle_placement: true
 
   image_selection_method: "boundary" 
-  image_selection_group: "high"  # low | medium | high
+  image_selection_group: "medium"  # low | medium | high
   object_selection_method: "boundary"
-  object_selection_group: "high"  # low | medium | high
+  object_selection_group: "medium"  # low | medium | high

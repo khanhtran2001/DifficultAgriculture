@@ -29,9 +29,9 @@ def _load_seeds(config_path: str | Path) -> list[int]:
 		cfg = yaml.safe_load(f) or {}
 
 	general_cfg = cfg.get("general") or {}
-	raw = general_cfg.get("random_seed", [123, 456, 789])
+	raw = general_cfg.get("random_seed")
 	if isinstance(raw, list) and raw:
-		return [int(x) for x in raw[:3]]
+		return [int(x) for x in raw[:4]]
 	if isinstance(raw, int):
 		return [int(raw)]
 	return [123, 456, 789]
