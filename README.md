@@ -125,29 +125,55 @@ python experiments/03_train_and_scoring.py
 python experiments/055_multiseed_copy_paste_exp.py --seeds 123,456,789
 ```
 
-## Main Outputs to Check
+## Notebook Workflow (How to Run)
 
+Run from repository root.
+
+### 1) Start Jupyter
+
+```bash
+source venv/bin/activate
+jupyter lab
+```
+
+If `jupyter` is not installed in your environment:
+
+```bash
+source venv/bin/activate
+pip install jupyterlab ipykernel
+python -m ipykernel install --user --name difficultyagri --display-name "DifficultyAgri"
+jupyter lab
+```
+
+### 2) Open a notebook
+
+Recommended analysis notebooks:
+
+- [notebooks/gwhd_2021_score_ap_size_inspection.ipynb](notebooks/gwhd_2021_score_ap_size_inspection.ipynb)
+- [notebooks/reflection/augmented_dataset_analysis.ipynb](notebooks/reflection/augmented_dataset_analysis.ipynb)
+
+### 3) Run notebook cells
+
+- Select the `DifficultyAgri` kernel (or your project venv kernel).
+- Run all cells from top to bottom to ensure paths and variables are initialized.
+- For long cells, wait until execution completes before running the next one.
+
+## Where to See Results
+
+### Notebook outputs
+
+- Tables and plots appear directly in notebook outputs.
+- Any saved figures depend on notebook cells and are usually written under `docs/` or `results/`.
+
+### Experiment result files
+
+- [results/](results/) : root folder for run artifacts
 - `results/*/Step_2_Train_and_Evaluate_BASELINE_MODEL/evaluation_results.json`
 - `results/*/Step_3_Scoring_Dataset/score_results.json`
 - `results/*/summary_augmentation_comparison.json`
-- `docs/Analyze/main_v2.pdf`
-- `docs/GCCE_2026/*.pdf`
 
-## GCCE 2026 Notes
+### Paper/report outputs
 
-From the GCCE 2026 submission policy:
+- [docs/Analyze/main_v2.pdf](docs/Analyze/main_v2.pdf)
+- [docs/GCCE_2026/](docs/GCCE_2026/)
 
-- Review manuscript length is 2 pages.
-- Use an A4-sized IEEE template.
-- Author list/order restrictions apply after the review deadline.
-
-Prepared files in this repo include:
-
-- `docs/GCCE_2026/MinImageScorer_GCCE2026_submission.tex`
-- `docs/GCCE_2026/gwhd_domain_score_satisfied.png` (RGB, 300 DPI, single-column-ready width)
-
-## Suggested Reading Order
-
-1. `docs/Analyze/main_v2.pdf`
-2. `docs/GCCE_2026/main_v7.pdf`
-3. `notebooks/gwhd_2021_score_ap_size_inspection.ipynb`
