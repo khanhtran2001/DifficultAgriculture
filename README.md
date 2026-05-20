@@ -31,25 +31,39 @@ The core idea is **MIS (MinImageScorer)**, a scoring method that ranks object/im
 
 Source: `docs/Analyze/main_v2.tex` and generated experiment artifacts under `results/`.
 
-## Important Figures
+## Important Experimental Results (From Paper)
 
-### 1) GWHD domain difficulty vs AP
+Source: `docs/Analyze/main_v2.tex`
 
-![GWHD domain score](docs/Analyze/gwhd_domain_score.png)
+### 1) MinneApple Size-Level Validation (Table)
 
-Interpretation: domains with higher median MIS generally have lower AP.
+| Category | AP | Mean S_obj | Top difficulty tertile |
+|---|---:|---:|---:|
+| Very Small (<=400 px^2) | 0.071 | 0.152 | 64.4% |
+| Small (400-1024 px^2) | 0.270 | 0.076 | 33.9% |
+| Medium (>1024 px^2) | 0.493 | 0.053 | 1.7% |
 
-### 2) Augmentation comparison summary
+Interpretation: hardest objects are concentrated in the very-small bucket, where AP is near zero.
 
-![Augmentation comparison](docs/Overall_Report/figures/augmentation_comparison_minneapple_gwhd.png)
+### 2) Copy-Paste Outcomes Across Datasets (3-seed mean)
 
-Interpretation: copy-paste behavior differs by structural bottleneck type.
+| Dataset | Near-zero AP concentration | Baseline AP | Best CP (Delta AP) | Worst CP (Delta AP) |
+|---|---|---|---|---|
+| MinneApple | Strong | 0.353 +/- 0.005 | -0.003 (Hi) | -0.008 (Rnd) |
+| GWHD 2021 | Moderate | 0.229 +/- 0.013 | -0.006 (Hi) | -0.034 (Lo) |
+| WGISD | Absent | 0.480 +/- 0.007 | +0.009 (Med) | +0.001 (Hi) |
 
-### 3) AP comparison bar chart
+Interpretation: copy-paste is negative on structurally flagged datasets (MinneApple, GWHD) and positive on unflagged WGISD.
 
-![AP comparison bar](docs/Overall_Report/figures/ap_comparison_bar.png)
+### 3) Image-Level Correlation of MIS With Error Rates
 
-Interpretation: method ranking should be interpreted together with data regime (size/domain constraints).
+| Dataset | Corr(score, miss rate) | Corr(score, FP rate) |
+|---|---:|---:|
+| MinneApple | 0.66 | 0.63 |
+| GWHD | 0.75 | 0.75 |
+| WGISD | 0.63 | 0.64 |
+
+Interpretation: MIS consistently tracks image difficulty across datasets.
 
 ## Repository Layout
 
