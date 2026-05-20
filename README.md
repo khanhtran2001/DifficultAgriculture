@@ -55,15 +55,11 @@ Interpretation: hardest objects are concentrated in the very-small bucket, where
 
 Interpretation: copy-paste is negative on structurally flagged datasets (MinneApple, GWHD) and positive on unflagged WGISD.
 
-### 3) Image-Level Correlation of MIS With Error Rates
+### 3) GWHD domain difficulty vs AP
 
-| Dataset | Corr(score, miss rate) | Corr(score, FP rate) |
-|---|---:|---:|
-| MinneApple | 0.66 | 0.63 |
-| GWHD | 0.75 | 0.75 |
-| WGISD | 0.63 | 0.64 |
+![GWHD domain score](docs/Analyze/gwhd_domain_score.png)
 
-Interpretation: MIS consistently tracks image difficulty across datasets.
+Interpretation: domains with higher median MIS generally have lower AP.
 
 ## Repository Layout
 
