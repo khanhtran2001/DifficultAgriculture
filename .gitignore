@@ -21,6 +21,7 @@ runs/
 # Model checkpoints
 finetuned_baseline_model/
 **.pt
+DifficultyAgri.zip
 
 # Logs Reports
 .vscode/
