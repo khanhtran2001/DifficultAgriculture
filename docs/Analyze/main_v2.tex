@@ -12,7 +12,8 @@
 
 \begin{document}
 
-\title{MIS: A Difficulty Concentration Signal for Pre Copy-Paste Augmentation Diagnosis in Agricultural Object Detection}
+\title{MIS: Diagnosing Structural Bottlenecks in Copy-Paste Augmentation
+for Agricultural Object Detection}
 
 \author{
     \IEEEauthorblockN{Huy Khanh Tran, Yuichiro Nomura, and Hiroshi Mineno}
@@ -65,7 +66,7 @@ metric computed from a trained baseline detector that captures
 model failure patterns on a given dataset.
 By correlating with miss rate and FP rate, MIS surfaces where difficulty
 concentrates in a dataset (driven by object size, domain composition or their interaction) 
-and helps determines whether copy-paste can provide
+and helps determine whether copy-paste can provide
 useful training signal. 
 On MinneApple~\cite{hani2020minneapple},
 GWHD~2021~\cite{david2021global}, and
@@ -154,12 +155,10 @@ threshold.
 
 \textbf{Domain (GWHD~2021).}
 Per-domain median MIS strongly anticorrelates with domain AP
-(Pearson~$r{=}{-}0.90$; Fig.~\ref{fig:gwhd}).
-A concentration test confirms that the top 20\% hardest images
-are statistically enriched for near-zero AP objects
-(1.34$\times$ lift over random), though the effect
-is moderate, suggesting GWHD difficulty is multi-factorial
-rather than traceable to a single structural source.
+(Pearson~$r{=}{-}0.90$; Fig.~\ref{fig:gwhd}): MIS correctly
+ranks domain difficulty from detector behavior alone,
+regardless of its underlying cause---varied cameras,
+growth stages, and geographic acquisition conditions.
 
 
 \begin{table}[t]
@@ -194,77 +193,85 @@ Medium ($>$1024\,px$^2$)      & 0.493 & 0.053 &  1.7\% \\
 MIS identifies hard objects concentrated below the recognition
 threshold.
 All four copy-paste conditions yield negative AP
-(Table~\ref{tab:outcomes}) showing that:
-adding more sub-resolution instances provides no usable learning
-signal regardless of selection strategy.
+(Table~\ref{tab:outcomes}), confirming that
+additional sub-resolution instances provide no usable
+learning signal regardless of selection strategy.
 
-\textbf{GWHD~2021 (domain instability).}
-MIS identifies hard images clustering in specific domains,
-with difficulty that is multi-factorial rather than traceable
-to a single structural source.
-The baseline itself carries notable seed variance
-($0.229{\pm}0.013$), reflecting the instability of multi-domain
-training.
-All copy-paste conditions produce negative mean AP.
-Score~Low yields the worst outcome ($-0.034{\pm}0.009$,
-a relative drop of 14.8\%), while Score~High achieves the least
-negative mean ($-0.006$) but extreme seed variance (${\pm}0.040$).
-The moderate near-zero AP concentration (1.34$\times$ lift,
-$p{<}0.001$) and high baseline variance (${\pm}0.013$) together
-indicate that GWHD difficulty is multi-factorial; MIS correctly
-flags the dataset as high-risk for copy-paste despite the
-complex underlying structure.
+\textbf{GWHD~2021 (domain difficulty).}
+MIS partitioning reveals near-complete domain separation:
+low-difficulty images are 66\% in ETHZ\_1/Rres\_1 domain with
+(AP\,${\approx}$\,0.70), while high-difficulty images are
+78\% Arvalis variants (AP\,${\approx}$\,0.40--0.47).
+This structure directly predicts per-condition behavior.
+Score~Low sources from high-AP domains, reinforcing
+already well-learned patterns which result in consistent, low-variance
+drop ($-0.034$, $\sigma{=}0.005$).
+Score~High sources from hard Arvalis domains where
+difficulty is acquisition-based; added instances cannot
+resolve domain gaps, yielding high instability
+($-0.006$, $\sigma{=}0.040$).
+Random and Medium sample without domain awareness,
+producing moderate drops ($-0.015$, $-0.017$) at
+intermediate variance ($\sigma{=}0.023$, $0.021$).
+Outcome variance scales monotonically with
+sourced-domain difficulty---a pattern that we can use MIS 
+to predicts
+from partition composition alone, before any augmented run.
 
 \textbf{WGISD (positive control).}
-MIS flags no structural bottleneck: hard instances do not concentrate
-below the size threshold or in minority domains.
-All conditions yield positive gains ($+0.001$ to $+0.009$;
-Table~\ref{tab:outcomes}), with Score~Medium achieving the best result
-($0.489{\pm}0.006$ vs.\ baseline $0.480{\pm}0.007$), confirming
-copy-paste viability when MIS raises no flag.
+MIS flags no structural bottleneck: unlike MinneApple
+and GWHD, $S_{\mathrm{obj}}$ shows no dominant
+concentration in near-zero AP size or domain regimes,
+and baseline AP is non-negligible across all object groups.
+All conditions yield positive gains (Table~\ref{tab:outcomes}), 
+with Score~Medium achieving
+the best result, confirming copy-paste viability
+when MIS raises no flag.
 
-Across all three benchmarks, the \emph{direction} of copy-paste
-outcome is consistent with the MIS diagnostic: all four
-conditions are negative on flagged datasets and positive on the
-unflagged dataset.
-This directional consistency, independent of which selection
-condition is used, supports a structural rather than
-selection-driven explanation.
+Across all three benchmarks, the \emph{direction} of
+copy-paste outcome is consistent with the MIS diagnostic:
+all conditions are negative on flagged datasets and
+positive on the unflagged dataset.
+This directional consistency, independent of selection
+strategy, supports a structural rather than
+selection-driven explanation and directly addresses
+why copy-paste struggles: it cannot overcome the
+underlying difficulty MIS identifies.
 
 \begin{table}[t]
 \centering
 \caption{Copy-paste outcomes (3-seed mean $\pm\,\sigma$).
-Conc.\,=\,near-zero AP enrichment in top-20\% high-MIS images.}
+Bottleneck: structural failure source identified by MIS.}
 \label{tab:outcomes}
 \footnotesize
-\setlength{\tabcolsep}{3.0pt}
+\setlength{\tabcolsep}{2.5pt}
 \renewcommand{\arraystretch}{0.95}
 \begin{tabular}{lllll}
 \toprule
 \textbf{Dataset}
-  & \textbf{Conc.}
-  & \textbf{Baseline AP}
-  & \textbf{Best CP ($\Delta$)}
-  & \textbf{Worst CP ($\Delta$)} \\
+  & \textbf{Bottleneck}
+  & \textbf{Base AP}
+  & \textbf{Best $\Delta$}
+  & \textbf{Worst $\Delta$} \\
 \midrule
 MinneApple
-  & Strong
+  & Size
   & $0.353\pm0.005$
   & $-0.003$ (Hi)
   & $-0.008$ (Rnd) \\
 GWHD~2021
-  & Moderate
+  & Domain
   & $0.229\pm0.013$
-  & $-0.006^{\dagger}$ (Hi)
+  & $-0.006^{*}$ (Hi)
   & $-0.034$ (Lo) \\
 WGISD
-  & Absent
+  & ---
   & $0.480\pm0.007$
   & $+0.009$ (Med)
   & $+0.001$ (Hi) \\
 \bottomrule
 \multicolumn{5}{l}{\scriptsize
-$^\dagger$Score High on GWHD: $\sigma{=}0.040$, high seed variance.}
+  $^*$Score High on GWHD: $\sigma{=}0.040$, high seed variance.}
 \end{tabular}
 \end{table}
 
@@ -298,30 +305,31 @@ JSPS KAKENHI JP25H01110.
 \begin{thebibliography}{00}
 
 \bibitem{kisantal2019augmentation}
-M.~Kisantal, Z.~Wojna, J.~Murawski, J.~Naruniec, and K.~Kyriakopoulos,
+M.~Kisantal \textit{et~al.},
 ``Augmentation for small object detection,''
-in \textit{Proc.\ ICACCI}, 2019, pp.~193--197.
+\textit{arXiv:1902.07296}, 2019.
 
 \bibitem{ghiasi2021simple}
 G.~Ghiasi \textit{et~al.},
-``Simple copy-paste is a strong data augmentation method for instance
-segmentation,''
-in \textit{Proc.\ IEEE/CVF CVPR}, 2021, pp.~2918--2928.
+``Simple copy-paste is a strong data augmentation method for
+instance segmentation,''
+in \textit{Proc.\ CVPR}, 2021, pp.~2918--2928.
 
 \bibitem{hani2020minneapple}
-N.~Hani, P.~Roy, and B.~Bhanu,
-``MinneApple: A benchmark dataset for apple detection and segmentation,''
-\textit{IEEE Robot.\ Autom.\ Lett.}, vol.~5, no.~2, pp.~852--858, 2020.
+N.~H\"{a}ni, P.~Roy, and V.~Isler,
+``MinneApple: A benchmark dataset for apple detection and
+segmentation,''
+\textit{IEEE RA-L}, vol.~5, no.~2, pp.~852--858, 2020.
 
 \bibitem{david2021global}
 E.~David \textit{et~al.},
-``Global Wheat Head Detection (GWHD) dataset,''
+``Global wheat head detection 2021,''
 \textit{Plant Phenomics}, 2021.
 
 \bibitem{santos2020grape}
-T.~T.~Santos, L.~L.~de~Souza, A.~A.~dos~Santos, and S.~Avila,
-``Grape detection, segmentation, and tracking using deep neural networks
-and three-dimensional association,''
+T.~T.~Santos \textit{et~al.},
+``Grape detection, segmentation, and tracking using deep
+neural networks,''
 \textit{Comput.\ Electron.\ Agric.}, vol.~170, p.~105247, 2020.
 
 \end{thebibliography}

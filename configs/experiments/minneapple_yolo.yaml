@@ -97,7 +97,7 @@ scoring_config:
   beta: 0.5
   iou_threshold: 0.5
   weight_mode: "balance_correlation"  # fixed | mean_match | balance_correlation
-  object_weight: 0.9
+  object_weight: 1
   false_positive_weight: 0.1
 
 
