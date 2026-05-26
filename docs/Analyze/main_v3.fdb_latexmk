@@ -1,7 +1,7 @@
 # Fdb version 4
-["pdflatex"] 1779692074.97929 "/home/khanh/Projects/DifficultyAgri/docs/Analyze/main_v2.tex" "main_v2.pdf" "main_v2" 1779692075.28544 0
+["pdflatex"] 1779704085.82874 "/home/khanh/Projects/DifficultyAgri/docs/Analyze/main_v3.tex" "main_v3.pdf" "main_v3" 1779704086.13112 0
   "/etc/texmf/web2c/texmf.cnf" 1776097522.37275 475 c0e671620eb5563b2130f56340a5fde8 ""
-  "/home/khanh/Projects/DifficultyAgri/docs/Analyze/main_v2.tex" 1779692074.55831 12775 ecb85c6a28b61b5d532b76b60f75210b ""
+  "/home/khanh/Projects/DifficultyAgri/docs/Analyze/main_v3.tex" 1779704085.41339 12561 f21a92f131119adc80b8da62088b6a3b ""
   "/usr/share/texlive/texmf-dist/fonts/enc/dvips/base/8r.enc" 1165713224 4850 80dc9bab7f31fb78a000ccfed0e27cab ""
   "/usr/share/texlive/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
   "/usr/share/texlive/texmf-dist/fonts/tfm/adobe/times/ptmb7t.tfm" 1136768653 2172 fd0c924230362ff848a33632ed45dc23 ""
@@ -91,10 +91,10 @@
   "/var/lib/texmf/web2c/pdftex/pdflatex.fmt" 1777713445 3348960 74311988f537101a44543503973cbebd ""
   "IEEEtran.cls" 1778061567.64777 288304 b67b6fc6c2abb39f9b461923f5199343 ""
   "gwhd_domain_score.png" 1779237799.97771 85127 1c180786d2ca6ccf98d4cb07f381ca18 ""
-  "main_v2.aux" 1779692075.25526 2316 088fb4f6a8bbc3ad7b4478541ec1b977 "pdflatex"
-  "main_v2.tex" 1779692074.55831 12775 ecb85c6a28b61b5d532b76b60f75210b ""
+  "main_v3.aux" 1779704086.10144 2288 338f2ef0c7067ae4e502f4658d3de48f "pdflatex"
+  "main_v3.tex" 1779704085.41339 12561 f21a92f131119adc80b8da62088b6a3b ""
   (generated)
-  "main_v2.aux"
-  "main_v2.log"
-  "main_v2.pdf"
+  "main_v3.aux"
+  "main_v3.log"
+  "main_v3.pdf"
   (rewritten before read)

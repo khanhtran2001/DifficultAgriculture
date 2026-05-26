@@ -28,20 +28,20 @@ for Agricultural Object Detection}
 Copy-paste augmentation achieves strong results for instance
 segmentation yet yields inconsistent or negative gains for
 bounding-box detection in agricultural scenes.
-We propose the \textbf{Minimum Inference Score (MIS)}, a difficulty
-metric derived from a trained baseline detector that correlates
-strongly with detection failure modes across objects and images.
-MIS reveals where and how a model fails on a given dataset:
-when hard instances concentrate in structurally constrained
+We propose the \textbf{Minimum Inference Score (MIS)}, a
+difficulty metric derived from a trained baseline detector
+that correlates strongly with detection failure modes---miss
+rate and false-positive rate---across objects and images.
+MIS partition analysis reveals where and how a model fails:
+hard instances concentrating in structurally constrained
 regimes---driven by object size, domain composition, or
-both---copy-paste augmentation cannot provide reliable gains.
-MIS also predicts selection strategy risk: outcome variance
-scales with sourced-domain difficulty, a pattern readable
-from partition composition before any augmented run.
-We validate both findings across three agricultural benchmarks,
-where MIS partition analysis identifies structural constraints
-that predict copy-paste failure, and positive gains
-in their absence.
+both---signal that copy-paste is unlikely to provide reliable
+gains, as confirmed across all tested selection strategies.
+We validate this diagnostic across three agricultural
+benchmarks, where MIS partition analysis also predicts
+relative selection strategy risk from partition composition,
+providing bidirectional validation across constrained and
+unconstrained datasets.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -51,33 +51,32 @@ agricultural object detection, data augmentation diagnostic
 
 % ----------------------------------------------------------
 \section{Introduction}
-
-Copy-paste augmentation composites cropped labeled instances into
-training images to increase sampling diversity~\cite{kisantal2019augmentation,
-ghiasi2021simple}.
-While effective for instance
-segmentation~\cite{ghiasi2021simple}, bounding-box detection in
-agricultural imagery is subject to harsher constraints---sub-resolution
-instances, multi-domain acquisition, and high object
-density---frequently producing inconsistent or negative augmentation
-outcomes and forcing costly multi-seed search without a principled
-stopping criterion.
+Copy-paste augmentation composites cropped instances into
+training images to increase diversity~\cite{kisantal2019augmentation,
+ghiasi2021simple}, yet yields inconsistent or negative gains
+for bounding-box detection in agricultural imagery subject
+to sub-resolution instances, multi-domain acquisition, and
+high object density---forcing costly multi-seed search
+without a principled stopping criterion.
+Critically, across all tested selection strategies and
+datasets with structural constraints, copy-paste
+consistently fails to provide reliable gains under
+YOLOv8s, suggesting the bottleneck is structural
+rather than a sampling problem.
 
 We introduce the \textbf{Minimum Inference Score (MIS)}, a
 metric computed from a trained baseline detector that captures
-model failure patterns on a given dataset.
-By correlating with miss rate and FP rate, MIS surfaces where
-difficulty concentrates in a dataset (driven by object size,
-domain composition, or their interaction), and enables two
-practical outputs: determining whether copy-paste can provide
-useful training signal, and predicting relative selection
-strategy risk from partition composition alone.
+model failure patterns on a given dataset, enabling two
+practical outputs without any augmented run: determining
+whether copy-paste can provide useful training signal, and
+predicting relative selection strategy risk from partition
+composition alone.
 On MinneApple~\cite{hani2020minneapple},
 GWHD~2021~\cite{david2021global}, and
 WGISD~\cite{santos2020grape}, MIS partition analysis identifies
-structural constraints that predict copy-paste failure,
-and positive gains when no such constraint is present,
-providing bidirectional diagnostic validation.
+structural constraints that predict copy-paste failure
+and positive gains in their absence, providing bidirectional
+diagnostic validation.
 
 % ----------------------------------------------------------
 \section{Methodology}
@@ -129,14 +128,11 @@ tertile into the highest-difficulty destination images;
 for their respective tertiles.
 \textbf{Random} selects both destination images and source objects
 without score-based filtering.
-This design isolates whether directing augmentation toward specific
-difficulty regimes affects outcome.
-Following~\cite{kisantal2019augmentation}, training data is expanded
-by 30\% via unblended within-image copy-paste: 2--8 objects per
-image, scale~$[0.9,1.1]$, rotation~$\pm15^\circ$,
-$3{\times}$~maximum reuse; all other settings follow the default
-YOLOv8 protocol.
-
+This design isolates whether targeting specific difficulty regimes
+affects outcome. Training data is expanded by 30\% via unblended
+copy-paste~\cite{kisantal2019augmentation}: 2--8 objects per image,
+scale~$[0.9,1.1]$, rotation~$\pm15^\circ$, $3{\times}$~maximum
+reuse; all other settings follow default YOLOv8 protocol.
 
 % ----------------------------------------------------------
 \section{Results}
@@ -149,7 +145,6 @@ $r{=}0.79$, $0.81$, $0.84$. Strong correlations across all
 three datasets confirm that MIS captures the primary axes of
 detection failure as intended by its construction.
 
-
 \subsection{MIS Identifies Structural Failure Sources}
 
 \textbf{Size (MinneApple).}
@@ -158,8 +153,8 @@ training instances (Spearman~$r_s{=}{-}0.82$;
 Table~\ref{tab:size_val}):
 64.4\% of the top-difficulty tertile falls in \textit{Very Small}
 instances (${\le}400$\,px$^2$), where AP is near-zero ($0.071$),
-indicating hard objects concentrate below the model's size recognition
-threshold.
+indicating hard objects concentrate below the model's size
+recognition threshold.
 
 \textbf{Domain (GWHD~2021).}
 Per-domain median MIS strongly anticorrelates with domain AP
@@ -167,7 +162,6 @@ Per-domain median MIS strongly anticorrelates with domain AP
 ranks domain difficulty from detector behavior alone,
 regardless of its underlying cause---varied cameras,
 growth stages, and geographic acquisition conditions.
-
 
 \begin{table}[t]
 \centering
@@ -198,22 +192,22 @@ Medium ($>$1024\,px$^2$)      & 0.493 & 0.053 &  1.7\% \\
 \subsection{Application: Pre-Augmentation Diagnostic for Copy-Paste}
 
 \textbf{MinneApple (resolution ceiling).}
-MIS identifies hard objects concentrated below the recognition
-threshold.
-All four copy-paste conditions yield negative \(\Delta\)AP
-(Table~\ref{tab:outcomes}), confirming that
-additional sub-resolution instances provide no usable
-learning signal regardless of selection strategy.
+MIS partition analysis identifies hard objects concentrated
+below the recognition threshold.
+All four copy-paste conditions yield negative $\Delta$AP
+(Table~\ref{tab:outcomes}), confirming that additional
+sub-resolution instances provide no usable learning signal
+regardless of selection strategy.
 
 \textbf{GWHD~2021 (domain difficulty).}
 MIS partitioning reveals near-complete domain separation:
-low-difficulty images are 66\% in ETHZ\_1/Rres\_1 domain with
+low-difficulty images are 66\% in ETHZ\_1/Rres\_1 domains
 (AP\,${\approx}$\,0.65), while high-difficulty images are
 78\% Arvalis variants (AP\,${\approx}$\,0.46).
 This structure directly predicts per-condition behavior.
 Score~Low sources from high-AP domains, reinforcing
-already well-learned patterns which result in consistent, low-variance
-drop ($-0.034$, $\sigma{=}0.005$).
+already well-learned patterns, resulting in consistent
+low-variance drop ($-0.034$, $\sigma{=}0.005$).
 Score~High sources from hard Arvalis domains where
 difficulty is acquisition-based; added instances cannot
 resolve domain gaps, yielding high instability
@@ -221,26 +215,22 @@ resolve domain gaps, yielding high instability
 Random and Medium sample without domain awareness,
 producing moderate drops ($-0.015$, $-0.017$) at
 intermediate variance ($\sigma{=}0.023$, $0.021$).
-Both outcome direction and variance scale with 
-sourced-domain difficulty---patterns MIS predicts 
-from partition composition alone, confirming a 
+Both outcome direction and variance scale with
+sourced-domain difficulty---patterns MIS predicts
+from partition composition alone, confirming a
 structural bottleneck no selection strategy can overcome.
 
-
 \textbf{WGISD (positive control).}
-MIS raises no flag; all conditions confirm viability with 
-positive gains (Table~\ref{tab:outcomes}), with Score~Medium 
-achieving the best result.
+MIS raises no flag; all conditions confirm viability
+with positive $\Delta$AP (Table~\ref{tab:outcomes}),
+with Score~Medium achieving the best result.
 
-Across all three benchmarks, the \emph{direction} of
-copy-paste outcome is consistent with the MIS diagnostic:
-all conditions are negative on flagged datasets and
-positive on the unflagged dataset.
-This directional consistency, independent of selection
-strategy, supports a structural rather than
-selection-driven explanation and directly addresses
-why copy-paste struggles: it cannot overcome the
-underlying difficulty MIS identifies.
+Across both flagged datasets, all selection strategies
+yield negative $\Delta$AP---selection-invariant failure
+that implicates structural constraints rather than
+sampling policy as the root cause, and directly explains
+why copy-paste struggles in detection when such
+constraints are present.
 
 \begin{table}[t]
 \centering
@@ -279,32 +269,34 @@ WGISD
 \end{tabular}
 \end{table}
 
-
 % ----------------------------------------------------------
 \section{Conclusion}
 
-MIS links baseline detector failure behavior to difficulty 
-concentration patterns, enabling a 
-practical pre-augmentation signal that indicates whether 
-copy-paste is likely to yield reliable gains.
-Furthermore, outcome variance across GWHD conditions scales
-monotonically with sourced-domain difficulty, suggesting
-MIS partitioning can inform selection strategy risk even
-when augmentation is inadvisable.
-In our experiments, 24 augmented training runs across MIS-flagged
-datasets (MinneApple and GWHD, 4 conditions $\times$ 3 seeds each)
-yielded zero reliable gains; MIS identifies these datasets without
-any augmented run, directly saving that compute budget.
+MIS links baseline detector failure behavior to difficulty
+concentration patterns, enabling two practical outputs:
+a pre-augmentation diagnostic for copy-paste viability,
+and a predictor of relative selection strategy risk
+from partition composition alone.
+The consistent failure across all selection strategies
+on structurally constrained datasets indicates that
+copy-paste's unreliability in detection stems from
+dataset structure, not selection policy---a distinction
+MIS partition analysis makes visible before any
+augmented run.
+In our experiments, 24 augmented training runs across
+MIS-flagged datasets (MinneApple and GWHD,
+4~conditions~$\times$~3~seeds each) yielded zero reliable
+gains; MIS identifies these datasets without any augmented
+run, directly saving that compute budget.
 Practitioners should apply MIS after baseline training:
-when MIS identifies strong or moderate concentration of 
-high-difficulty instances in near-zero AP regimes, copy-paste augmentation 
-is unlikely to yield reliable gains.
-This finding is validated bidirectionally across three agricultural
-benchmarks.
-Future work includes using MIS to guide instance-level selection
-when structural constraints are absent, and combining MIS with
-generative methods to produce information-rich training instances
-for hard regimes.
+inspecting partition composition for concentrated
+high-difficulty instances reveals structural constraints
+under which copy-paste augmentation is unlikely to
+yield reliable gains.
+Future work includes using MIS to guide instance-level
+selection when structural constraints are absent, and
+combining MIS with generative methods to produce
+information-rich training instances for hard regimes.
 
 \section*{Acknowledgment}
 This work was supported by JST FOREST JPMJFR201B,
