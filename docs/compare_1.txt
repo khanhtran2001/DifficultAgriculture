@@ -1,0 +1,203 @@
+MIS: Diagnosing Bottlenecks in Copy-Paste
+Augmentation for Agricultural Object Detection
+Huy Khanh Tran, Yuichiro Nomura, and Hiroshi Mineno
+Graduate School of Integrated Science and Technology, Shizuoka University, Japan
+tran.huy.khanh.25@shizuoka.ac.jp
+Abstract—Copy-paste augmentation achieves strong results for
+instance segmentation yet yields inconsistent or negative gains for
+bounding-box detection in agricultural scenes. We propose the
+Minimum Inference Score (MIS), a difficulty metric derived from
+a trained baseline detector that correlates strongly with detection
+failure modes—miss rate and false-positive rate—across objects
+and images. MIS partition analysis reveals whether hard instances
+concentrate in constrained regimes—driven by object size, domain
+composition, or both. When such concentration is detected, copy-
+paste fails to provide reliable gains across all tested selection
+strategies. Furthermore, by examining which difficulty groups
+dominate each MIS partition, practitioners can anticipate which
+selection strategies will produce the most harmful outcomes—all
+before any augmented training run. We validate both findings
+across three agricultural benchmarks, providing bidirectional
+validation across constrained and unconstrained datasets.
+Index Terms—object detection, copy-paste augmentation, diffi-
+culty scoring, agricultural object detection, data augmentation
+diagnostic
+I. I NTRODUCTION
+Copy-paste augmentation composites cropped instances
+into training images to increase diversity [1], [2], yet yields
+inconsistent or negative gains for bounding-box detection in
+agricultural imagery, forcing costly multi-seed search without
+a principled stopping criterion. Critically, this failure persists
+across all tested selection strategies, suggesting the root cause is
+a dataset-level bottleneck that no sampling policy can resolve.
+We introduce the Minimum Inference Score (MIS), a
+metric computed from a trained baseline detector that captures
+model failure patterns on a given dataset. MIS partition analysis
+enables two practical outputs without any augmented run. First,
+it determines whether copy-paste can provide useful training
+signal by identifying whether hard instances concentrate
+in constrained regimes—validated across MinneApple [3],
+GWHD 2021 [4], and WGISD [5], where MIS correctly
+predicts copy-paste failure and positive gains in their absence.
+Second, it predicts which selection strategies risk harmful
+outcomes: on GWHD 2021 [4], Score Low sourcing from high-
+AP partitions produces the worst consistent drop, a pattern
+visible from partition composition.
+to retain near-miss candidates. For each g ∈ G(I), let
+P(g)={p : IoU(p, g)≥0.5}. The Object Difficulty Score is
+(
+minp∈P(g)[α(1−cp ) + β(1−up )], P(g) ̸= ∅
+Sobj (g) =
+α + β,
+P(g) = ∅
+(1)
+with α=β=0.5 and up =IoU(p, g). Unmatched objects receive
+the maximum score (α+β=1). The Image Difficulty Score is
+1 X
+Simg (I) =
+Sobj (g) + w2 · FPrate(I), (2)
+|G(I)| g
+where FPrate(I) counts unmatched predictions per image.
+This yields Sobj ∈ [0, 1] for every ground-truth object and
+Simg for every training image, where higher values indicate
+greater detection difficulty. By construction, Simg encodes both
+axes of detection failure (miss rate and FP rate); w2 is set
+by grid search to balance their contributions. MIS scores are
+model-conditioned and reflect structural properties through
+detector failure behavior, not directly.
+B. Augmentation Protocol
+We train a YOLOv8s baseline and partition all training
+objects by Sobj and all training images by Simg into equal
+difficulty tertiles (Low, Medium, High). Four copy-paste
+conditions are evaluated: Score High pastes objects from
+the highest-difficulty object tertile into the highest-difficulty
+destination images; Score Medium and Score Low follow
+the same logic for their respective tertiles. Random selects
+both destination images and source objects without score-
+based filtering. This design isolates whether targeting specific
+difficulty regimes affects outcome. Training data is expanded
+by 30% via unblended within image copy-paste [1]: 2–8 objects
+per image, scale [0.9, 1.1], rotation ±15◦ , 3× maximum reuse;
+all other settings follow default YOLOv8 protocol.
+III. R ESULTS
+A. MIS Reflects Detection Failure
+Pearson correlations between Simg and miss rate on the vali-
+dation set are r=0.79, 0.81, 0.91 on MinneApple, GWHD, and
+II. M ETHODOLOGY
+WGISD; correlations with false positive rate are r=0.79, 0.81,
+0.84. These strong correlations confirm that images assigned
+A. Scoring Formulation
+high Simg are genuinely harder to detect—the model misses
+Let G(I) denote ground-truth boxes in image I. A trained de- more objects and produces more false positives on them—
+tector produces predictions p with confidence cp at τconf =0.001 validating MIS as a reliable proxy for detection difficulty.TABLE I
+M INNE A PPLE : Sobj CAPTURES SIZE - LEVEL DIFFICULTY.
+Category
+AP
+Very Small (≤400 px2 ) 0.071
+Small (400–1024 px2 ) 0.270
+Medium (>1024 px2 )
+0.493
+Mean Sobj Top tertile
+0.152
+0.076
+0.053
+64.4%
+33.9%
+1.7%
+TABLE II
+C OPY- PASTE OUTCOMES (3- SEED MEAN ± σ). B OTTLENECK : FAILURE
+SOURCE IDENTIFIED BY MIS.
+Dataset
+∗
+Fig. 1. GWHD 2021: per-domain AP vs. median image difficulty score.
+Bottleneck Base AP
+MinneApple Size
+GWHD 2021 Domain
+WGISD
+—
+Best ∆
+Worst ∆
+0.353 ± 0.005 −0.003 (Hi) −0.008 (Rnd)
+0.229 ± 0.013 −0.006∗ (Hi) −0.034 (Lo)
+0.480 ± 0.007 +0.009 (Med) +0.001 (Hi)
+Score High on GWHD: σ=0.040, high seed variance.
+the model cannot reliably exploit, yielding the seed instability
+(−0.006, σ=0.040). Random and Medium source from mixed
+partitions, producing moderate drops (−0.015, −0.017) at
+variance (σ=0.023, 0.021).
+WGISD (positive control). MIS raises no flag: difficulty is
+distributed across size categories without concentration, and
+no domain separation is present. This signals that copy-paste
+can introduce useful learning signal. This is confirmed: all
+conditions yield positive ∆AP (Table II), with Score Medium
+achieving the best result.
+IV. C ONCLUSION
+B. MIS Identifies Dataset Failure Sources
+Size (MinneApple). Sobj strongly correlates with object size
+(Spearman rs =−0.82): 64.4% of the top-difficulty tertile falls
+in Very Small instances (≤400 px2 ), where AP is low indicating
+that the model struggles primarily with small objects.
+Domain (GWHD 2021). Per-domain median MIS strongly
+correlates with domain AP (Pearson r=−0.90; Fig. 1): MIS
+assigns higher scores to images from harder acquisition
+domains, purely from detector behavior, without access to
+domain labels during scoring.
+C. Application: Copy-Paste Diagnostic and Strategy Risk
+MinneApple (resolution ceiling). MIS partition analysis
+shows 64.4% of high-difficulty objects fall in the Very Small
+category (≤400 px2 , AP = 0.071). This signals a resolution
+ceiling: pasting additional objects provides no useful learning
+signal because the model already fails on them structurally,
+not from lack of examples. This is confirmed: all copy-paste
+conditions yield negative ∆AP (Table II), regardless of selection
+strategy, with no condition reversing the outcome direction.
+GWHD 2021 (domain difficulty and strategy risk). MIS
+partitioning reveals near-complete domain separation: low-
+difficulty images are 66% ETHZ 1/Rres 1 (AP ≈ 0.65), while
+high-difficulty images are 78% Arvalis variants (AP ≈ 0.46).
+Since difficulty comes from the image-level properties of each
+domain, not from a lack of instances, copy-paste cannot help: it
+adds more instances but cannot change how each domain looks
+to the detector. This is confirmed: all conditions yield negative
+∆AP. Partition composition further predicts per-strategy risk by
+revealing which domains each strategy sources from. Score Low
+draws exclusively from high-AP domains, flooding training
+with already well-represented patterns—confirmed by the
+consistent drop (−0.034, σ=0.005). Score High draws from
+hard Arvalis domains, introducing high-variance signal that
+Copy-paste augmentation fails when hard instances concen-
+trate in structurally constrained regimes—below the detector’s
+resolution range or within acquisition-defined domains that
+instance-level augmentation cannot bridge. MIS makes these
+constraints visible before any augmented run: on MinneApple
+and GWHD 2021, partition analysis correctly predicted failure
+across all four selection strategies; on WGISD, the absence
+of such concentration correctly predicted positive gains across
+all conditions—providing bidirectional validation that MIS
+functions as a diagnostic, not merely a failure detector. On
+domain-structured datasets, MIS partition composition delivers
+a second output: it identifies which selection strategies risk,
+from partition composition alone, before any augmented run.
+In our experiments, 24 augmented training runs across MIS-
+flagged datasets yielded zero reliable gains; MIS identifies these
+cases without any augmented run, directly saving that compute
+budget. Future work includes using MIS to guide instance-level
+selection when structural constraints are absent, and combining
+MIS with generative methods to produce information-rich
+instances for hard regimes that copy-paste cannot reach.
+ACKNOWLEDGMENT
+This work was supported by JST FOREST JPMJFR201B,
+JSPS KAKENHI JP25H01110.
+R EFERENCES
+[1] M. Kisantal et al., “Augmentation for small object detection,”
+arXiv:1902.07296, 2019.
+[2] G. Ghiasi et al., “Simple copy-paste is a strong data augmentation method
+for instance segmentation,” in Proc. CVPR, 2021, pp. 2918–2928.
+[3] N. Häni, P. Roy, and V. Isler, “MinneApple: A benchmark dataset for
+apple detection and segmentation,” IEEE RA-L, vol. 5, no. 2, pp. 852–858,
+2020.
+[4] E. David et al., “Global wheat head detection 2021,” Plant Phenomics,
+2021.
+[5] T. T. Santos et al., “Grape detection, segmentation, and tracking using
+deep neural networks,” Comput. Electron. Agric., vol. 170, p. 105247,
+2020.

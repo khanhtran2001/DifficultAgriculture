@@ -1,7 +1,7 @@
 # Fdb version 4
-["pdflatex"] 1787221145.81076 "/home/khanhtran/Projects/HardAug/DifficultAgriculture/docs/Analyze/main_v3.tex" "main_v3.pdf" "main_v3" 1787221146.05709 0
+["pdflatex"] 1787225463.82692 "/home/khanhtran/Projects/HardAug/DifficultAgriculture/docs/Revise/MIS_paper_revised (2).tex" "MIS_paper_revised (2).pdf" "MIS_paper_revised (2)" 1787225464.06985 0
   "/etc/texmf/web2c/texmf.cnf" 1787220661.14165 475 c0e671620eb5563b2130f56340a5fde8 ""
-  "/home/khanhtran/Projects/HardAug/DifficultAgriculture/docs/Analyze/main_v3.tex" 1786428257.70277 12838 c0bf38a54ce77dfafca81e7c878cad57 ""
+  "/home/khanhtran/Projects/HardAug/DifficultAgriculture/docs/Revise/MIS_paper_revised (2).tex" 1787225463.36615 12804 7fffe3893f17e9c07ef7644a30ad23d9 ""
   "/usr/share/texlive/texmf-dist/fonts/enc/dvips/base/8r.enc" 1165713224 4850 80dc9bab7f31fb78a000ccfed0e27cab ""
   "/usr/share/texlive/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
   "/usr/share/texlive/texmf-dist/fonts/tfm/adobe/times/ptmb7t.tfm" 1136768653 2172 fd0c924230362ff848a33632ed45dc23 ""
@@ -89,12 +89,12 @@
   "/usr/share/texmf/web2c/texmf.cnf" 1707919699 40399 f2c302f7d2af602abb742093540a5834 ""
   "/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map" 1787220664.06171 5472669 54eaf61a88b6b7896ebd0dac973cb29c ""
   "/var/lib/texmf/web2c/pdftex/pdflatex.fmt" 1787220717 8213970 c73d2ebcb94377185e80f3f59d0c50de ""
-  "IEEEtran.cls" 1786428257.69977 288304 b67b6fc6c2abb39f9b461923f5199343 ""
-  "gwhd_domain_score.png" 1786428257.69977 85127 1c180786d2ca6ccf98d4cb07f381ca18 ""
-  "main_v3.aux" 1787221146.03061 2250 643e3673aae467d05a87040641f84899 "pdflatex"
-  "main_v3.tex" 1786428257.70277 12838 c0bf38a54ce77dfafca81e7c878cad57 ""
+  "IEEEtran.cls" 1787218831.4345 288304 b67b6fc6c2abb39f9b461923f5199343 ""
+  "MIS_paper_revised (2).aux" 1787225464.04416 2338 9242be5e7f8f8dee64d47aff7b0ace8d "pdflatex"
+  "MIS_paper_revised (2).tex" 1787225463.36615 12804 7fffe3893f17e9c07ef7644a30ad23d9 ""
+  "gwhd_domain_score.png" 1787218758.2404 85127 1c180786d2ca6ccf98d4cb07f381ca18 ""
   (generated)
-  "main_v3.aux"
-  "main_v3.log"
-  "main_v3.pdf"
+  "MIS_paper_revised (2).aux"
+  "MIS_paper_revised (2).log"
+  "MIS_paper_revised (2).pdf"
   (rewritten before read)

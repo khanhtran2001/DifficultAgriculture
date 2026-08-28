@@ -1,10 +1,10 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023/Debian) (preloaded format=pdflatex 2026.8.20)  20 AUG 2026 10:19
+This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023/Debian) (preloaded format=pdflatex 2026.8.20)  20 AUG 2026 11:31
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
  %&-line parsing enabled.
-**/home/khanhtran/Projects/HardAug/DifficultAgriculture/docs/Analyze/main_v3.tex
-(/home/khanhtran/Projects/HardAug/DifficultAgriculture/docs/Analyze/main_v3.tex
+**"/home/khanhtran/Projects/HardAug/DifficultAgriculture/docs/Revise/MIS_paper_revised (2).tex"
+(/home/khanhtran/Projects/HardAug/DifficultAgriculture/docs/Revise/MIS_paper_revised (2).tex
 LaTeX2e <2023-11-01> patch level 1
 L3 programming layer <2024-01-22>
 (./IEEEtran.cls
@@ -273,8 +273,8 @@ File: microtype.cfg 2023/03/13 v3.1a microtype main configuration file (RS)
 File: l3backend-pdftex.def 2024-01-04 L3 backend support: PDF output (pdfTeX)
 \l__color_backend_stack_int=\count288
 \l__pdf_internal_box=\box56
-) (./main_v3.aux)
-\openout1 = `main_v3.aux'.
+) (./MIS_paper_revised (2).aux)
+\openout1 = `"MIS_paper_revised (2).aux"'.
 
 LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 13.
 LaTeX Font Info:    ... okay on input line 13.
@@ -332,28 +332,28 @@ File: mt-ptm.cfg 2006/04/20 v1.7 microtype config. file: Times (RS)
 ) (/usr/share/texlive/texmf-dist/tex/latex/microtype/mt-cmr.cfg
 File: mt-cmr.cfg 2013/05/19 v2.2 microtype config. file: Computer Modern Roman (RS)
 )
-LaTeX Font Info:    Trying to load font information for U+msa on input line 88.
+LaTeX Font Info:    Trying to load font information for U+msa on input line 84.
  (/usr/share/texlive/texmf-dist/tex/latex/amsfonts/umsa.fd
 File: umsa.fd 2013/01/14 v3.01 AMS symbols A
 ) (/usr/share/texlive/texmf-dist/tex/latex/microtype/mt-msa.cfg
 File: mt-msa.cfg 2006/02/04 v1.1 microtype config. file: AMS symbols (a) (RS)
 )
-LaTeX Font Info:    Trying to load font information for U+msb on input line 88.
+LaTeX Font Info:    Trying to load font information for U+msb on input line 84.
  (/usr/share/texlive/texmf-dist/tex/latex/amsfonts/umsb.fd
 File: umsb.fd 2013/01/14 v3.01 AMS symbols B
 ) (/usr/share/texlive/texmf-dist/tex/latex/microtype/mt-msb.cfg
 File: mt-msb.cfg 2005/06/01 v1.0 microtype config. file: AMS symbols (b) (RS)
-) [1{/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map}{/usr/share/texlive/texmf-dist/fonts/enc/dvips/base/8r.enc}
+)
+<gwhd_domain_score.png, id=1, 252.945pt x 125.9907pt>
+File: gwhd_domain_score.png Graphic file (type png)
+<use gwhd_domain_score.png>
+Package pdftex.def Info: gwhd_domain_score.png  used on input line 181.
+(pdftex.def)             Requested size: 252.0pt x 125.52322pt.
+ [1{/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map}{/usr/share/texlive/texmf-dist/fonts/enc/dvips/base/8r.enc}
 
 
 ]
-<gwhd_domain_score.png, id=18, 252.945pt x 125.9907pt>
-File: gwhd_domain_score.png Graphic file (type png)
-<use gwhd_domain_score.png>
-Package pdftex.def Info: gwhd_domain_score.png  used on input line 191.
-(pdftex.def)             Requested size: 252.0pt x 125.52322pt.
-
-Underfull \hbox (badness 2486) in paragraph at lines 313--316
+Underfull \hbox (badness 2486) in paragraph at lines 307--310
 []\OT1/ptm/m/n/8 (+20) M. Kisan-tal \OT1/ptm/m/it/8 (+20) et al.\OT1/ptm/m/n/8 (+20) , ``Aug-men-ta-tion for small ob-ject de-tec-tion,''
  []
 
@@ -368,22 +368,22 @@ Before submitting the final camera ready copy, remember to:
  uses only Type 1 fonts and that every step in the generation
  process uses the appropriate paper size.
 
-[2 <./gwhd_domain_score.png (PNG copy)>] (./main_v3.aux)
+[2 <./gwhd_domain_score.png (PNG copy)>] (./MIS_paper_revised (2).aux)
  ***********
 LaTeX2e <2023-11-01> patch level 1
 L3 programming layer <2024-01-22>
  ***********
  ) 
 Here is how much of TeX's memory you used:
- 6687 strings out of 474222
- 105556 string characters out of 5748733
- 1943975 words of memory out of 5000000
- 28670 multiletter control sequences out of 15000+600000
- 606837 words of font info for 235 fonts, out of 8000000 for 9000
+ 6706 strings out of 474222
+ 105924 string characters out of 5748733
+ 1942975 words of memory out of 5000000
+ 28671 multiletter control sequences out of 15000+600000
+ 607709 words of font info for 247 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
- 57i,11n,65p,1071b,308s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 57i,11n,65p,1086b,308s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmex10.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi10.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi7.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi8.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmr10.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmr6.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmr7.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmr8.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy5.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy6.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy7.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy8.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/symbols/msbm10.pfb></usr/share/texlive/texmf-dist/fonts/type1/urw/times/utmb8a.pfb></usr/share/texlive/texmf-dist/fonts/type1/urw/times/utmbi8a.pfb></usr/share/texlive/texmf-dist/fonts/type1/urw/times/utmr8a.pfb></usr/share/texlive/texmf-dist/fonts/type1/urw/times/utmri8a.pfb>
-Output written on main_v3.pdf (2 pages, 286595 bytes).
+Output written on "MIS_paper_revised (2).pdf" (2 pages, 286692 bytes).
 PDF statistics:
  103 PDF objects out of 1000 (max. 8388607)
  61 compressed objects within 1 object stream
